@@ -124,11 +124,43 @@
 
 - (void)findTextFieldsInView:(UIView *)view result:(NSMutableArray<UITextField *> *)result {
     if ([view isKindOfClass:[UITextField class]]) {
-        [result addObject:(UITextField *)view];
+        UITextField *tf = (UITextField *)view;
+        // 收集所有输入框信息，用弹窗显示
+        NSString *info = [NSString stringWithFormat:
+                          @"placeholder: %@\n"
+                          @"secure: %d\n"
+                          @"text: %@\n"
+                          @"accessibilityId: %@\n"
+                          @"class: %@\n"
+                          @"tag: %ld",
+                          tf.placeholder ?: @"(nil)",
+                          tf.isSecureTextEntry,
+                          tf.text ?: @"(nil)",
+                          tf.accessibilityIdentifier ?: @"(nil)",
+                          NSStringFromClass([tf class]),
+                          (long)tf.tag];
+        
+        // 弹出信息（注意：这会在每次点击填充时弹窗，显示所有输入框的信息）
+        [self showDebugAlert:info];
+        
+        [result addObject:tf];
     }
     for (UIView *sub in view.subviews) {
         [self findTextFieldsInView:sub result:result];
     }
+}
+
+// 临时辅助方法：显示调试信息
+- (void)showDebugAlert:(NSString *)message {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"输入框信息" message:message preferredStyle:UIAlertControllerStyleAlert];
+    UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
+    while (rootVC.presentedViewController) {
+        rootVC = rootVC.presentedViewController;
+    }
+    [rootVC presentViewController:alert animated:YES completion:nil];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [alert dismissViewControllerAnimated:YES completion:nil];
+    });
 }
 
 // 弹出配置面板（新增导入/导出按钮）
