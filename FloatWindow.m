@@ -302,7 +302,7 @@
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"HH:mm";
     NSString *startTimeStr = [fmt stringFromDate:mgr.roundStartTime];
-    NSString *infoText = [NSString stringWithFormat:@"本次【%@】，启动时间：%@", [mgr currentRoundName], startTimeStr];
+    NSString *infoText = [NSString stringWithFormat:@"【%@】进行中或已完成，启动时间：%@", [mgr currentRoundName], startTimeStr];
     UILabel *infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 18)];
     infoLabel.text = infoText;
     infoLabel.font = [UIFont boldSystemFontOfSize:13];
