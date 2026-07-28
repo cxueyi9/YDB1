@@ -21,6 +21,7 @@
         self.floatWindowPoint = CGPointMake(20, 100);
         self.pasteDelay = 1.0;
         self.passwordDelay = 0.5;
+        self.floatLocked = NO;
     }
     return self;
 }
@@ -71,6 +72,11 @@
     [UIPasteboard generalPasteboard].string = [self exportAccountsText];
 }
 
+- (void)resetProgress {
+    self.currentIndex = 0;
+    [self saveToFile];
+}
+
 #pragma mark - 日志
 
 - (NSString *)logFilePath {
@@ -100,6 +106,11 @@
     return [NSString stringWithContentsOfFile:[self logFilePath] encoding:NSUTF8StringEncoding error:nil] ?: @"";
 }
 
+- (void)clearLog {
+    NSString *path = [self logFilePath];
+    [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+}
+
 #pragma mark - 持久化
 
 - (NSString *)dataFilePath {
@@ -117,7 +128,8 @@
         @"currentIndex": @(self.currentIndex),
         @"floatWindowPoint": NSStringFromCGPoint(self.floatWindowPoint),
         @"pasteDelay": @(self.pasteDelay),
-        @"passwordDelay": @(self.passwordDelay)
+        @"passwordDelay": @(self.passwordDelay),
+        @"floatLocked": @(self.floatLocked)
     };
     [data writeToFile:[self dataFilePath] atomically:YES];
 }
@@ -135,6 +147,8 @@
         if (pd) self.pasteDelay = [pd doubleValue];
         NSNumber *pwd = data[@"passwordDelay"];
         if (pwd) self.passwordDelay = [pwd doubleValue];
+        NSNumber *locked = data[@"floatLocked"];
+        self.floatLocked = locked ? [locked boolValue] : NO;
     }
 }
 
