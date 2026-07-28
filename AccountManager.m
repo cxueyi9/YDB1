@@ -26,13 +26,14 @@
         self.pasteDelay = 1.0;
         self.passwordDelay = 0.5;
         self.floatLocked = NO;
-        
+        self.autoLock = NO;  // 新增
+
         self.currentRound = 0;
         self.roundAName = @"A轮";
         self.roundBName = @"B轮";
         self.roundStartTime = [NSDate date];
         self.needLogRoundStart = YES;
-        
+
         self.serverURL = @"http://你的服务器地址:5000/upload";
         self.currentRoundRecords = [NSMutableArray array];
     }
@@ -70,10 +71,8 @@
         if (trimmed.length == 0) continue;
         NSArray *parts = [trimmed componentsSeparatedByString:@":"];
         if (parts.count == 3) {
-            // 格式：序号:账号:密码
             [_accounts addObject:@{@"account": parts[1], @"password": parts[2]}];
         } else if (parts.count == 2) {
-            // 兼容旧格式：账号:密码
             [_accounts addObject:@{@"account": parts[0], @"password": parts[1]}];
         }
     }
@@ -102,7 +101,6 @@
 }
 
 #pragma mark - 本地日志
-
 - (NSString *)logFilePath {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     return [paths.firstObject stringByAppendingPathComponent:@"fill_log.txt"];
@@ -113,7 +111,6 @@
     fmt.dateFormat = @"yyyy/M/d HH:mm";
     NSString *timeStr = [fmt stringFromDate:[NSDate date]];
     NSString *line = [NSString stringWithFormat:@"%@ 开始, %@\n", [self currentRoundName], timeStr];
-    
     NSString *path = [self logFilePath];
     NSFileManager *fm = [NSFileManager defaultManager];
     if (![fm fileExistsAtPath:path]) {
@@ -131,7 +128,6 @@
     fmt.dateFormat = @"yyyy/M/d HH:mm";
     NSString *timeStr = [fmt stringFromDate:[NSDate date]];
     NSString *line = [NSString stringWithFormat:@"%ld/%ld, %@, %@\n", (long)index, (long)total, timeStr, account];
-    
     NSString *path = [self logFilePath];
     NSFileManager *fm = [NSFileManager defaultManager];
     if (![fm fileExistsAtPath:path]) {
@@ -149,12 +145,10 @@
 }
 
 - (void)clearLog {
-    NSString *path = [self logFilePath];
-    [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+    [[NSFileManager defaultManager] removeItemAtPath:[self logFilePath] error:nil];
 }
 
 #pragma mark - 本轮记录（上传用）
-
 - (void)addRoundRecordWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account {
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"yyyy/M/d HH:mm";
@@ -178,7 +172,6 @@
         if (success) {
             [self.currentRoundRecords removeAllObjects];
         } else {
-            // 上传失败，暂存
             NSMutableArray *staged = [[self loadStagedRecords] mutableCopy] ?: [NSMutableArray array];
             [staged addObjectsFromArray:self.currentRoundRecords];
             [self saveStagedRecords:staged];
@@ -218,7 +211,7 @@
     req.HTTPMethod = @"POST";
     [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     req.HTTPBody = jsonData;
-    
+
     NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         if (error) {
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -241,8 +234,7 @@
     [task resume];
 }
 
-#pragma mark - 暂存记录持久化
-
+#pragma mark - 暂存记录
 - (NSString *)stagedFilePath {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     return [paths.firstObject stringByAppendingPathComponent:@"staged_records.plist"];
@@ -257,12 +249,9 @@
     [[NSFileManager defaultManager] removeItemAtPath:[self stagedFilePath] error:nil];
 }
 
-#pragma mark - 设备标识
-
 - (NSString *)deviceIdentifier {
     static NSString *identifier = nil;
     if (identifier) return identifier;
-    
     NSString *key = @"com.youdaibao.deviceid";
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     identifier = [ud stringForKey:key];
@@ -275,7 +264,6 @@
 }
 
 #pragma mark - 持久化
-
 - (NSString *)dataFilePath {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     return [paths.firstObject stringByAppendingPathComponent:@"com.youdaibao.config.plist"];
@@ -293,6 +281,7 @@
         @"pasteDelay": @(self.pasteDelay),
         @"passwordDelay": @(self.passwordDelay),
         @"floatLocked": @(self.floatLocked),
+        @"autoLock": @(self.autoLock),
         @"currentRound": @(self.currentRound),
         @"roundAName": self.roundAName ?: @"A轮",
         @"roundBName": self.roundBName ?: @"B轮",
@@ -318,7 +307,9 @@
         if (pwd) self.passwordDelay = [pwd doubleValue];
         NSNumber *locked = data[@"floatLocked"];
         self.floatLocked = locked ? [locked boolValue] : NO;
-        
+        NSNumber *autoL = data[@"autoLock"];
+        self.autoLock = autoL ? [autoL boolValue] : NO;
+
         NSNumber *round = data[@"currentRound"];
         self.currentRound = round ? [round integerValue] : 0;
         self.roundAName = data[@"roundAName"] ?: @"A轮";
@@ -326,7 +317,6 @@
         self.roundStartTime = data[@"roundStartTime"] ?: [NSDate date];
         NSNumber *needLog = data[@"needLogRoundStart"];
         self.needLogRoundStart = needLog ? [needLog boolValue] : YES;
-        
         self.serverURL = data[@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
     }
     self.currentRoundRecords = [NSMutableArray array];

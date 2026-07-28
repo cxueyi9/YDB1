@@ -14,8 +14,10 @@
 @property (nonatomic, assign) NSTimeInterval pasteDelay;
 // 密码粘贴等待时间（秒）
 @property (nonatomic, assign) NSTimeInterval passwordDelay;
-// 是否锁定图标
+// 是否锁定图标（禁止点击填充）
 @property (nonatomic, assign) BOOL floatLocked;
+// 是否开启自动锁定（每轮结束后自动锁定）
+@property (nonatomic, assign) BOOL autoLock;
 
 // 轮次管理
 @property (nonatomic, assign) NSInteger currentRound;          // 0 或 1

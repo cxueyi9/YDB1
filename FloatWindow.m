@@ -60,8 +60,13 @@
 
 - (void)handleTap:(UITapGestureRecognizer *)tap {
     if (self.isEditing) return;
-    
     AccountManager *mgr = [AccountManager shared];
+    // 如果锁定则直接返回，不执行任何操作
+    if (mgr.floatLocked) {
+        [FloatWindow showToast:@"已锁定，请解除锁定后再操作"];
+        return;
+    }
+    
     NSInteger total = mgr.accounts.count;
     if (total == 0) return;
     
@@ -92,7 +97,12 @@
     
     if (mgr.currentIndex == 0) {
         mgr.needLogRoundStart = YES;
+        // 自动锁定功能：如果开启了自动锁定，则本轮结束后自动锁定
+        if (mgr.autoLock) {
+            mgr.floatLocked = YES;
+        }
         [mgr saveToFile];
+        
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((mgr.pasteDelay + mgr.passwordDelay + 2.0) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [mgr uploadRoundRecordsWithCompletion:^(BOOL success, NSString *errMsg) {
                 if (success) {
@@ -137,7 +147,7 @@
     AccountManager *mgr = [AccountManager shared];
     
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 430;  // 适当加高
+    CGFloat panelH = 470;  // 增加高度以容纳新开关
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -221,7 +231,7 @@
     
     yPos += 34;
     
-    // 第三行：服务器地址（全宽）
+    // 第三行：服务器地址
     UILabel *serverLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 70, 20)];
     serverLabel.text = @"服务器地址";
     serverLabel.font = [UIFont systemFontOfSize:12];
@@ -237,7 +247,7 @@
     
     // 第四行：锁定图标 + 跳转到
     UILabel *lockLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 60, 20)];
-    lockLabel.text = @"锁定图标";
+    lockLabel.text = @"锁定";
     lockLabel.font = [UIFont systemFontOfSize:12];
     [panel addSubview:lockLabel];
     UISwitch *lockSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin + 65, yPos-5, 51, 31)];
@@ -267,6 +277,18 @@
     jumpBtn.layer.cornerRadius = 6;
     [jumpBtn addTarget:self action:@selector(jumpAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:jumpBtn];
+    
+    yPos += 36;
+    
+    // 新增行：自动锁定开关
+    UILabel *autoLockLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 80, 20)];
+    autoLockLabel.text = @"自动锁定";
+    autoLockLabel.font = [UIFont systemFontOfSize:12];
+    [panel addSubview:autoLockLabel];
+    UISwitch *autoLockSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin + 85, yPos-5, 51, 31)];
+    autoLockSwitch.on = mgr.autoLock;
+    autoLockSwitch.tag = 2004;  // 新 tag
+    [panel addSubview:autoLockSwitch];
     
     yPos += 36;
     
@@ -302,7 +324,7 @@
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"HH:mm";
     NSString *startTimeStr = [fmt stringFromDate:mgr.roundStartTime];
-    NSString *infoText = [NSString stringWithFormat:@"【%@】进行中或已完成，启动时间：%@", [mgr currentRoundName], startTimeStr];
+    NSString *infoText = [NSString stringWithFormat:@"本次【%@】，启动时间：%@", [mgr currentRoundName], startTimeStr];
     UILabel *infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 18)];
     infoLabel.text = infoText;
     infoLabel.font = [UIFont boldSystemFontOfSize:13];
@@ -311,7 +333,7 @@
     [panel addSubview:infoLabel];
     yPos += 22;
     
-    // 日志按钮行 + 补上传
+    // 日志按钮 + 补上传
     UIButton *copyLogBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     copyLogBtn.frame = CGRectMake(15, yPos, 90, 28);
     [copyLogBtn setTitle:@"复制日志" forState:UIControlStateNormal];
@@ -381,6 +403,9 @@
     
     UISwitch *lockSwitch = (UISwitch *)[panel viewWithTag:2002];
     mgr.floatLocked = lockSwitch.on;
+    
+    UISwitch *autoLockSwitch = (UISwitch *)[panel viewWithTag:2004];
+    mgr.autoLock = autoLockSwitch.on;
     
     UITextField *roundATF = (UITextField *)[panel viewWithTag:3000];
     UITextField *roundBTF = (UITextField *)[panel viewWithTag:3001];
