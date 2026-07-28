@@ -435,6 +435,16 @@
     self.isEditing = NO;
 }
 
+- (void)uploadStagedAction:(id)sender {
+    [[AccountManager shared] uploadStagedRecordsWithCompletion:^(BOOL success, NSString *msg) {
+        if (success) {
+            [FloatWindow showToast:@"补上传成功"];
+        } else {
+            [FloatWindow showToast:[NSString stringWithFormat:@"补上传失败: %@", msg]];
+        }
+    }];
+}
+
 @end
 
 #pragma mark - FloatWindow 实现
