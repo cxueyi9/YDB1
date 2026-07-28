@@ -56,7 +56,7 @@
     NSInteger total = mgr.accounts.count;
     if (total == 0) return;
     
-    // 获取当前将要填充的账号（先取索引）
+    // 获取当前将要填充的账号
     NSInteger idx = mgr.currentIndex;
     NSDictionary *acc = mgr.accounts[idx % total];
     NSString *account = acc[@"account"];
@@ -67,14 +67,18 @@
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     
+    // 获取最上层主窗口（排除自己的浮窗，优先 keyWindow）
     UIWindow *mainWindow = nil;
     for (UIWindow *w in [UIApplication sharedApplication].windows) {
-        if (w != [FloatWindow shared] && w.hidden == NO && w.windowLevel == UIWindowLevelNormal) {
+        if (w == [FloatWindow shared] || w.hidden) continue;
+        if (w.isKeyWindow) {
             mainWindow = w;
             break;
         }
+        if (!mainWindow || w.windowLevel >= mainWindow.windowLevel) {
+            mainWindow = w;
+        }
     }
-    if (!mainWindow) mainWindow = [UIApplication sharedApplication].keyWindow;
     if (!mainWindow) return;
     
     // 填充账号
@@ -84,13 +88,20 @@
         [self fillText:password atPoint:mgr.passwordPoint inWindow:mainWindow];
     });
     
-    // 显示进度和账号（隐藏密码）
+    // 显示进度和账号
     NSInteger currentProgress = idx + 1;
     NSString *msg = [NSString stringWithFormat:@"进度 %ld/%ld，账号 %@", (long)currentProgress, (long)total, account];
     [FloatWindow showToast:msg];
 }
 
 - (void)fillText:(NSString *)text atPoint:(CGPoint)point inWindow:(UIWindow *)window {
+    // 临时让主窗口成为 keyWindow，否则浮窗可能会阻止输入框成为第一响应者
+    UIWindow *floatWin = [FloatWindow shared];
+    BOOL floatWasKey = floatWin.isKeyWindow;
+    if (floatWasKey) {
+        [window makeKeyWindow];
+    }
+    
     UIView *target = [window hitTest:point withEvent:nil];
     UITextField *tf = nil;
     
@@ -115,15 +126,23 @@
     }
     
     if (tf) {
+        [tf becomeFirstResponder];  // 获取焦点，否则赋值可能不生效
         tf.text = text;
         [tf sendActionsForControlEvents:UIControlEventEditingChanged];
+        // 若直接赋值无效，则尝试粘贴
         if (![tf.text isEqualToString:text]) {
             [UIPasteboard generalPasteboard].string = text;
             [tf paste:nil];
         }
     } else {
+        // 未找到输入框，尝试在当前第一响应者执行粘贴
         [UIPasteboard generalPasteboard].string = text;
         [[UIApplication sharedApplication] sendAction:@selector(paste:) to:nil from:nil forEvent:nil];
+    }
+    
+    // 恢复浮窗的 keyWindow 状态
+    if (floatWasKey) {
+        [floatWin makeKeyWindow];
     }
 }
 
