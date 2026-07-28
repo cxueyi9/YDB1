@@ -69,10 +69,10 @@
     
     NSInteger displayIndex = mgr.currentIndex + 1;   // 1-based
     
-    // 如果需要记录轮次开始且是第一条，则先切换轮次
+    // 如果是本轮第一条，切换轮次并记录开始
     if (mgr.needLogRoundStart && displayIndex == 1) {
-        [mgr switchToNextRound];               // 切换轮次名称
-        [mgr recordLogRoundStart];             // 记录“X轮开始”日志
+        [mgr switchToNextRound];
+        [mgr recordLogRoundStart];
         mgr.needLogRoundStart = NO;
         [mgr saveToFile];
     }
@@ -81,23 +81,33 @@
     NSString *account = acc[@"account"];
     NSString *password = acc[@"password"];
     
+    // 记录本地日志和本轮记录（用于上传）
     [mgr recordLogWithIndex:displayIndex total:total account:account];
+    [mgr addRoundRecordWithIndex:displayIndex total:total account:account];
     
     NSString *msg = [NSString stringWithFormat:@"%ld/%ld，账号 %@", (long)displayIndex, (long)total, account];
     [FloatWindow showToast:msg];
     
-    // 索引递增（已填充数+1）
     mgr.currentIndex = (mgr.currentIndex + 1) % total;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     
-    // 如果递增后 currentIndex == 0，说明本轮已全部填充完，下一轮即将开始
+    // 一轮结束，延迟上传
     if (mgr.currentIndex == 0) {
         mgr.needLogRoundStart = YES;
         [mgr saveToFile];
-        // 注意：此时不切换轮次，界面仍显示旧轮次
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((mgr.pasteDelay + mgr.passwordDelay + 2.0) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [mgr uploadRoundRecordsWithCompletion:^(BOOL success, NSString *errMsg) {
+                if (success) {
+                    [FloatWindow showToast:@"本轮记录已上传"];
+                } else {
+                    [FloatWindow showToast:[NSString stringWithFormat:@"上传失败: %@", errMsg]];
+                }
+            }];
+        });
     }
     
+    // 延时粘贴
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.pasteDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [UIPasteboard generalPasteboard].string = account;
         [[UIApplication sharedApplication] sendAction:@selector(paste:) to:nil from:nil forEvent:nil];
@@ -130,9 +140,8 @@
     
     AccountManager *mgr = [AccountManager shared];
     
-    // 减小面板高度，紧凑布局
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 325;
+    CGFloat panelH = 395;  // 稍微加高以容纳服务器地址行
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -147,7 +156,7 @@
     titleLabel.font = [UIFont boldSystemFontOfSize:15];
     [panel addSubview:titleLabel];
     
-    // 账号列表（缩小高度）
+    // 账号列表
     UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(15, 28, panelW-30, 55)];
     tv.layer.borderWidth = 0.5;
     tv.layer.borderColor = [UIColor colorWithWhite:0.8 alpha:1].CGColor;
@@ -157,15 +166,14 @@
     tv.text = [mgr exportAccountsText];
     [panel addSubview:tv];
     
-    // 布局参数
     CGFloat yPos = 90;
     CGFloat leftMargin = 15;
-    CGFloat comboWidth = (panelW - 2*leftMargin - 10) / 2; // 左右两列组合宽度
+    CGFloat comboWidth = (panelW - 2*leftMargin - 10) / 2;
     CGFloat labelWidth = 60;
     CGFloat tfWidth = comboWidth - labelWidth - 5;
+    CGFloat secondColX = leftMargin + comboWidth + 10;
     
-    // ---- 第一行：粘贴延时、密码延时 ----
-    // 粘贴延时
+    // 第一行：粘贴延时、密码延时
     UILabel *delayLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, labelWidth, 20)];
     delayLabel.text = @"粘贴延时";
     delayLabel.font = [UIFont systemFontOfSize:12];
@@ -178,8 +186,6 @@
     delayTF.tag = 2000;
     [panel addSubview:delayTF];
     
-    // 密码延时
-    CGFloat secondColX = leftMargin + comboWidth + 10;
     UILabel *pwdLabel = [[UILabel alloc] initWithFrame:CGRectMake(secondColX, yPos, labelWidth, 20)];
     pwdLabel.text = @"密码延时";
     pwdLabel.font = [UIFont systemFontOfSize:12];
@@ -194,7 +200,7 @@
     
     yPos += 32;
     
-    // ---- 第二行：A轮名、B轮名 ----
+    // 第二行：A轮名、B轮名
     UILabel *roundALabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, labelWidth, 20)];
     roundALabel.text = @"A轮名";
     roundALabel.font = [UIFont systemFontOfSize:12];
@@ -219,8 +225,21 @@
     
     yPos += 34;
     
-    // ---- 第三行：锁定图标 与 跳转到 ----
-    // 锁定图标
+    // 第三行：服务器地址（全宽）
+    UILabel *serverLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 70, 20)];
+    serverLabel.text = @"服务器地址";
+    serverLabel.font = [UIFont systemFontOfSize:12];
+    [panel addSubview:serverLabel];
+    UITextField *serverTF = [[UITextField alloc] initWithFrame:CGRectMake(leftMargin + 75, yPos-2, panelW - 120, 26)];
+    serverTF.borderStyle = UITextBorderStyleRoundedRect;
+    serverTF.font = [UIFont systemFontOfSize:12];
+    serverTF.text = mgr.serverURL;
+    serverTF.tag = 3003;
+    [panel addSubview:serverTF];
+    
+    yPos += 34;
+    
+    // 第四行：锁定图标 + 跳转到
     UILabel *lockLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 60, 20)];
     lockLabel.text = @"锁定图标";
     lockLabel.font = [UIFont systemFontOfSize:12];
@@ -230,10 +249,9 @@
     lockSwitch.tag = 2002;
     [panel addSubview:lockSwitch];
     
-    // 跳转到（右侧组合）
     CGFloat jumpLabelWidth = 45;
     CGFloat jumpBtnWidth = 45;
-    CGFloat jumpTfWidth = comboWidth - jumpLabelWidth - jumpBtnWidth - 10; // 输入框宽度
+    CGFloat jumpTfWidth = comboWidth - jumpLabelWidth - jumpBtnWidth - 10;
     UILabel *jumpLabel = [[UILabel alloc] initWithFrame:CGRectMake(secondColX, yPos, jumpLabelWidth, 20)];
     jumpLabel.text = @"跳转到";
     jumpLabel.font = [UIFont systemFontOfSize:12];
@@ -284,7 +302,7 @@
     
     yPos += 40;
     
-    // 当前轮次信息 (加粗显示)
+    // 当前轮次信息（加粗）
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"HH:mm";
     NSString *startTimeStr = [fmt stringFromDate:mgr.roundStartTime];
@@ -332,7 +350,6 @@
     if (targetLine > total) targetLine = total;
     
     mgr.currentIndex = targetLine - 1;
-    // 跳转后不清除 needLogRoundStart，保持轮次连续性
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     [FloatWindow showToast:[NSString stringWithFormat:@"已跳转到第 %ld 行", (long)targetLine]];
@@ -347,7 +364,7 @@
     NSString *originalText = [mgr exportAccountsText];
     
     if (![newText isEqualToString:originalText]) {
-        [mgr updateAccountsWithText:newText]; // 内部重置进度和轮次
+        [mgr updateAccountsWithText:newText];
     }
     
     UITextField *delayTF = (UITextField *)[panel viewWithTag:2000];
@@ -364,6 +381,9 @@
     UITextField *roundBTF = (UITextField *)[panel viewWithTag:3001];
     if (roundATF.text.length > 0) mgr.roundAName = roundATF.text;
     if (roundBTF.text.length > 0) mgr.roundBName = roundBTF.text;
+    
+    UITextField *serverTF = (UITextField *)[panel viewWithTag:3003];
+    if (serverTF.text.length > 0) mgr.serverURL = serverTF.text;
     
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
@@ -483,7 +503,7 @@
 - (void)updateBadge {
     AccountManager *mgr = [AccountManager shared];
     NSInteger total = mgr.accounts.count;
-    NSInteger progress = mgr.currentIndex; // 已填充数量
+    NSInteger progress = mgr.currentIndex;
     if (total > 0) {
         _floatView.badgeLabel.text = [NSString stringWithFormat:@"%ld/%ld", (long)progress, (long)total];
     } else {

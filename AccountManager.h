@@ -18,11 +18,15 @@
 @property (nonatomic, assign) BOOL floatLocked;
 
 // 轮次管理
-@property (nonatomic, assign) NSInteger currentRound;         // 0 或 1
+@property (nonatomic, assign) NSInteger currentRound;          // 0 或 1
 @property (nonatomic, copy) NSString *roundAName;
 @property (nonatomic, copy) NSString *roundBName;
 @property (nonatomic, strong) NSDate *roundStartTime;
-@property (nonatomic, assign) BOOL needLogRoundStart;         // 是否需要在下次填充时记录轮次开始
+@property (nonatomic, assign) BOOL needLogRoundStart;          // 是否需要在下次填充时记录轮次开始
+
+// 服务器上传
+@property (nonatomic, copy) NSString *serverURL;
+@property (nonatomic, strong, readonly) NSMutableArray<NSDictionary *> *currentRoundRecords;
 
 - (NSString *)currentRoundName;
 - (void)switchToNextRound;
@@ -30,17 +34,20 @@
 - (NSDictionary *)nextAccount;
 - (void)updateAccountsWithText:(NSString *)text;
 - (NSString *)exportAccountsText;
-- (void)importFromClipboard;
-- (void)exportToClipboard;
 
-// 日志
+// 本地日志文件
 - (void)recordLogWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account;
-- (void)recordLogRoundStart;                                  // 新增
+- (void)recordLogRoundStart;
 - (NSString *)logFilePath;
 - (NSString *)readLogContent;
 - (void)clearLog;
 
+// 本轮记录（用于上传）
+- (void)addRoundRecordWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account;
+- (void)uploadRoundRecordsWithCompletion:(void(^)(BOOL success, NSString *msg))completion;
+
 - (void)resetProgress;
 - (void)saveToFile;
+- (NSString *)deviceIdentifier;
 
 @end

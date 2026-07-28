@@ -1,6 +1,10 @@
 #import "AccountManager.h"
 #import <UIKit/UIKit.h>
 
+@interface AccountManager ()
+@property (nonatomic, strong) NSMutableArray<NSDictionary *> *currentRoundRecords;
+@end
+
 @implementation AccountManager {
     NSMutableArray<NSDictionary *> *_accounts;
 }
@@ -23,12 +27,14 @@
         self.passwordDelay = 0.5;
         self.floatLocked = NO;
         
-        // 轮次默认值
         self.currentRound = 0;
         self.roundAName = @"A轮";
         self.roundBName = @"B轮";
         self.roundStartTime = [NSDate date];
-        self.needLogRoundStart = YES;   // 首次需要记录
+        self.needLogRoundStart = YES;
+        
+        self.serverURL = @"http://你的服务器地址:5000/upload";
+        self.currentRoundRecords = [NSMutableArray array];
     }
     return self;
 }
@@ -71,8 +77,8 @@
             [_accounts addObject:@{@"account": parts[0], @"password": parts[1]}];
         }
     }
-    self.currentIndex = 0;      // 修改列表重置进度
-    self.currentRound = 0;      // 重置为A轮
+    self.currentIndex = 0;
+    self.currentRound = 0;
     self.roundStartTime = [NSDate date];
     self.needLogRoundStart = YES;
     [self saveToFile];
@@ -106,7 +112,7 @@
     [self saveToFile];
 }
 
-#pragma mark - 日志
+#pragma mark - 本地日志文件
 
 - (NSString *)logFilePath {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
@@ -158,6 +164,84 @@
     [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
 }
 
+#pragma mark - 本轮记录（用于上传）
+
+- (void)addRoundRecordWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account {
+    NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
+    fmt.dateFormat = @"yyyy/M/d HH:mm";
+    NSString *timeStr = [fmt stringFromDate:[NSDate date]];
+    NSDictionary *record = @{
+        @"index": @(index),
+        @"total": @(total),
+        @"account": account ?: @"",
+        @"time": timeStr,
+        @"device": [self deviceIdentifier]
+    };
+    [self.currentRoundRecords addObject:record];
+}
+
+- (void)uploadRoundRecordsWithCompletion:(void(^)(BOOL success, NSString *msg))completion {
+    if (self.currentRoundRecords.count == 0) {
+        if (completion) completion(NO, @"无本轮记录");
+        return;
+    }
+    if (self.serverURL.length == 0) {
+        if (completion) completion(NO, @"未设置服务器地址");
+        return;
+    }
+    
+    NSArray *records = [self.currentRoundRecords copy];
+    NSError *err;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:records options:0 error:&err];
+    if (err) {
+        if (completion) completion(NO, err.localizedDescription);
+        return;
+    }
+    
+    NSURL *url = [NSURL URLWithString:self.serverURL];
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
+    req.HTTPMethod = @"POST";
+    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    req.HTTPBody = jsonData;
+    
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
+        if (error) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (completion) completion(NO, error.localizedDescription);
+            });
+            return;
+        }
+        NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
+        if (httpResp.statusCode == 200) {
+            [self.currentRoundRecords removeAllObjects];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (completion) completion(YES, @"上传成功");
+            });
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSString *msg = [NSString stringWithFormat:@"服务器返回状态码: %ld", (long)httpResp.statusCode];
+                if (completion) completion(NO, msg);
+            });
+        }
+    }];
+    [task resume];
+}
+
+- (NSString *)deviceIdentifier {
+    static NSString *identifier = nil;
+    if (identifier) return identifier;
+    
+    NSString *key = @"com.youdaibao.deviceid";
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    identifier = [ud stringForKey:key];
+    if (!identifier) {
+        identifier = [[NSUUID UUID] UUIDString];
+        [ud setObject:identifier forKey:key];
+        [ud synchronize];
+    }
+    return identifier;
+}
+
 #pragma mark - 持久化
 
 - (NSString *)dataFilePath {
@@ -181,7 +265,8 @@
         @"roundAName": self.roundAName ?: @"A轮",
         @"roundBName": self.roundBName ?: @"B轮",
         @"roundStartTime": self.roundStartTime ?: [NSDate date],
-        @"needLogRoundStart": @(self.needLogRoundStart)
+        @"needLogRoundStart": @(self.needLogRoundStart),
+        @"serverURL": self.serverURL ?: @""
     };
     [data writeToFile:[self dataFilePath] atomically:YES];
 }
@@ -209,7 +294,10 @@
         self.roundStartTime = data[@"roundStartTime"] ?: [NSDate date];
         NSNumber *needLog = data[@"needLogRoundStart"];
         self.needLogRoundStart = needLog ? [needLog boolValue] : YES;
+        
+        self.serverURL = data[@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
     }
+    self.currentRoundRecords = [NSMutableArray array];
 }
 
 @end
