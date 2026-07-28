@@ -38,7 +38,7 @@
 
 - (void)handlePan:(UIPanGestureRecognizer *)pan {
     if (self.isEditing) return;
-    if ([AccountManager shared].floatLocked) return;
+    if ([AccountManager shared].floatLocked) return;   // 锁定图标禁止拖拽
     
     CGPoint translation = [pan translationInView:self.superview];
     CGPoint newCenter = CGPointMake(self.center.x + translation.x, self.center.y + translation.y);
@@ -61,9 +61,9 @@
 - (void)handleTap:(UITapGestureRecognizer *)tap {
     if (self.isEditing) return;
     AccountManager *mgr = [AccountManager shared];
-    // 如果锁定则直接返回，不执行任何操作
-    if (mgr.floatLocked) {
-        [FloatWindow showToast:@"已锁定，请解除锁定后再操作"];
+    // 如果锁定点击则不允许填充
+    if (mgr.tapLocked) {
+        [FloatWindow showToast:@"点击已锁定，请解除锁定后再操作"];
         return;
     }
     
@@ -95,11 +95,12 @@
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     
+    // 一轮结束时的处理
     if (mgr.currentIndex == 0) {
         mgr.needLogRoundStart = YES;
-        // 自动锁定功能：如果开启了自动锁定，则本轮结束后自动锁定
+        // 自动锁定点击
         if (mgr.autoLock) {
-            mgr.floatLocked = YES;
+            mgr.tapLocked = YES;
         }
         [mgr saveToFile];
         
@@ -147,7 +148,7 @@
     AccountManager *mgr = [AccountManager shared];
     
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 470;  // 增加高度以容纳新开关
+    CGFloat panelH = 490;   // 适当加高以容纳三行开关
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -231,7 +232,7 @@
     
     yPos += 34;
     
-    // 第三行：服务器地址
+    // 第三行：服务器地址（全宽）
     UILabel *serverLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 70, 20)];
     serverLabel.text = @"服务器地址";
     serverLabel.font = [UIFont systemFontOfSize:12];
@@ -245,15 +246,36 @@
     
     yPos += 34;
     
-    // 第四行：锁定图标 + 跳转到
-    UILabel *lockLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 60, 20)];
-    lockLabel.text = @"锁定";
-    lockLabel.font = [UIFont systemFontOfSize:12];
-    [panel addSubview:lockLabel];
-    UISwitch *lockSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin + 65, yPos-5, 51, 31)];
-    lockSwitch.on = mgr.floatLocked;
-    lockSwitch.tag = 2002;
-    [panel addSubview:lockSwitch];
+    // 第四行：锁定图标 + 锁定点击（两个开关）
+    UILabel *lockIconLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 65, 20)];
+    lockIconLabel.text = @"锁定图标";
+    lockIconLabel.font = [UIFont systemFontOfSize:12];
+    [panel addSubview:lockIconLabel];
+    UISwitch *lockIconSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin + 70, yPos-5, 51, 31)];
+    lockIconSwitch.on = mgr.floatLocked;
+    lockIconSwitch.tag = 2002;
+    [panel addSubview:lockIconSwitch];
+    
+    UILabel *tapLockLabel = [[UILabel alloc] initWithFrame:CGRectMake(secondColX, yPos, 65, 20)];
+    tapLockLabel.text = @"锁定点击";
+    tapLockLabel.font = [UIFont systemFontOfSize:12];
+    [panel addSubview:tapLockLabel];
+    UISwitch *tapLockSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(secondColX + 70, yPos-5, 51, 31)];
+    tapLockSwitch.on = mgr.tapLocked;
+    tapLockSwitch.tag = 2005;   // 新tag
+    [panel addSubview:tapLockSwitch];
+    
+    yPos += 36;
+    
+    // 第五行：自动锁定 + 跳转到
+    UILabel *autoLockLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 80, 20)];
+    autoLockLabel.text = @"自动锁定";
+    autoLockLabel.font = [UIFont systemFontOfSize:12];
+    [panel addSubview:autoLockLabel];
+    UISwitch *autoLockSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin + 85, yPos-5, 51, 31)];
+    autoLockSwitch.on = mgr.autoLock;
+    autoLockSwitch.tag = 2004;
+    [panel addSubview:autoLockSwitch];
     
     CGFloat jumpLabelWidth = 45;
     CGFloat jumpBtnWidth = 45;
@@ -277,18 +299,6 @@
     jumpBtn.layer.cornerRadius = 6;
     [jumpBtn addTarget:self action:@selector(jumpAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:jumpBtn];
-    
-    yPos += 36;
-    
-    // 新增行：自动锁定开关
-    UILabel *autoLockLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 80, 20)];
-    autoLockLabel.text = @"自动锁定";
-    autoLockLabel.font = [UIFont systemFontOfSize:12];
-    [panel addSubview:autoLockLabel];
-    UISwitch *autoLockSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin + 85, yPos-5, 51, 31)];
-    autoLockSwitch.on = mgr.autoLock;
-    autoLockSwitch.tag = 2004;  // 新 tag
-    [panel addSubview:autoLockSwitch];
     
     yPos += 36;
     
@@ -320,11 +330,12 @@
     
     yPos += 40;
     
-    // 当前轮次信息
+    // 当前轮次信息（进行中/已完成）
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"HH:mm";
     NSString *startTimeStr = [fmt stringFromDate:mgr.roundStartTime];
-    NSString *infoText = [NSString stringWithFormat:@"本次【%@】，启动时间：%@", [mgr currentRoundName], startTimeStr];
+    NSString *status = (mgr.currentIndex == 0 && mgr.accounts.count > 0) ? @"已完成" : @"进行中";
+    NSString *infoText = [NSString stringWithFormat:@"【%@】%@，启动时间：%@", [mgr currentRoundName], status, startTimeStr];
     UILabel *infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 18)];
     infoLabel.text = infoText;
     infoLabel.font = [UIFont boldSystemFontOfSize:13];
@@ -333,7 +344,7 @@
     [panel addSubview:infoLabel];
     yPos += 22;
     
-    // 日志按钮 + 补上传
+    // 日志按钮行 + 补上传
     UIButton *copyLogBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     copyLogBtn.frame = CGRectMake(15, yPos, 90, 28);
     [copyLogBtn setTitle:@"复制日志" forState:UIControlStateNormal];
@@ -401,8 +412,11 @@
     if (mgr.pasteDelay < 0.1) mgr.pasteDelay = 1.0;
     if (mgr.passwordDelay < 0.1) mgr.passwordDelay = 0.5;
     
-    UISwitch *lockSwitch = (UISwitch *)[panel viewWithTag:2002];
-    mgr.floatLocked = lockSwitch.on;
+    UISwitch *lockIconSwitch = (UISwitch *)[panel viewWithTag:2002];
+    mgr.floatLocked = lockIconSwitch.on;
+    
+    UISwitch *tapLockSwitch = (UISwitch *)[panel viewWithTag:2005];
+    mgr.tapLocked = tapLockSwitch.on;
     
     UISwitch *autoLockSwitch = (UISwitch *)[panel viewWithTag:2004];
     mgr.autoLock = autoLockSwitch.on;

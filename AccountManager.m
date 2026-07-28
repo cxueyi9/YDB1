@@ -26,7 +26,8 @@
         self.pasteDelay = 1.0;
         self.passwordDelay = 0.5;
         self.floatLocked = NO;
-        self.autoLock = NO;  // 新增
+        self.tapLocked = NO;   // 新增
+        self.autoLock = NO;
 
         self.currentRound = 0;
         self.roundAName = @"A轮";
@@ -80,6 +81,7 @@
     self.currentRound = 0;
     self.roundStartTime = [NSDate date];
     self.needLogRoundStart = YES;
+    self.tapLocked = NO;   // 重置时解除锁定点击
     [self saveToFile];
 }
 
@@ -97,6 +99,7 @@
     self.currentRound = 0;
     self.roundStartTime = [NSDate date];
     self.needLogRoundStart = YES;
+    self.tapLocked = NO;
     [self saveToFile];
 }
 
@@ -281,6 +284,7 @@
         @"pasteDelay": @(self.pasteDelay),
         @"passwordDelay": @(self.passwordDelay),
         @"floatLocked": @(self.floatLocked),
+        @"tapLocked": @(self.tapLocked),
         @"autoLock": @(self.autoLock),
         @"currentRound": @(self.currentRound),
         @"roundAName": self.roundAName ?: @"A轮",
@@ -307,6 +311,8 @@
         if (pwd) self.passwordDelay = [pwd doubleValue];
         NSNumber *locked = data[@"floatLocked"];
         self.floatLocked = locked ? [locked boolValue] : NO;
+        NSNumber *tapLock = data[@"tapLocked"];
+        self.tapLocked = tapLock ? [tapLock boolValue] : NO;
         NSNumber *autoL = data[@"autoLock"];
         self.autoLock = autoL ? [autoL boolValue] : NO;
 

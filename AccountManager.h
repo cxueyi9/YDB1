@@ -14,9 +14,11 @@
 @property (nonatomic, assign) NSTimeInterval pasteDelay;
 // 密码粘贴等待时间（秒）
 @property (nonatomic, assign) NSTimeInterval passwordDelay;
-// 是否锁定图标（禁止点击填充）
+// 是否锁定图标（禁止拖拽）
 @property (nonatomic, assign) BOOL floatLocked;
-// 是否开启自动锁定（每轮结束后自动锁定）
+// 是否锁定点击（禁止填充）
+@property (nonatomic, assign) BOOL tapLocked;
+// 是否开启自动锁定（每轮结束后自动开启 tapLocked）
 @property (nonatomic, assign) BOOL autoLock;
 
 // 轮次管理
@@ -24,7 +26,7 @@
 @property (nonatomic, copy) NSString *roundAName;
 @property (nonatomic, copy) NSString *roundBName;
 @property (nonatomic, strong) NSDate *roundStartTime;
-@property (nonatomic, assign) BOOL needLogRoundStart;          // 是否需要在下次填充时记录轮次开始
+@property (nonatomic, assign) BOOL needLogRoundStart;          // 是否需要记录轮次开始
 
 // 服务器上传
 @property (nonatomic, copy) NSString *serverURL;
