@@ -313,7 +313,7 @@
     infoLabel.textColor = [UIColor darkGrayColor];
     infoLabel.tag = 4000;
     [panel addSubview:infoLabel];
-    yPos += 22;
+    
     
     yPos += 42; // 紧接信息标签下方
     
