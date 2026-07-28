@@ -53,12 +53,20 @@
     if (self.isEditing) return;
     
     AccountManager *mgr = [AccountManager shared];
-    if (mgr.accounts.count == 0) return;
+    NSInteger total = mgr.accounts.count;
+    if (total == 0) return;
     
-    NSDictionary *acc = [mgr nextAccount];
-    if (!acc) return;
+    // 获取当前将要填充的账号（先取索引）
+    NSInteger idx = mgr.currentIndex;
+    NSDictionary *acc = mgr.accounts[idx % total];
+    NSString *account = acc[@"account"];
+    NSString *password = acc[@"password"];
     
-    // 获取主窗口（排除自己）
+    // 移动到下一个
+    mgr.currentIndex = (idx + 1) % total;
+    [mgr saveToFile];
+    [[FloatWindow shared] updateBadge];
+    
     UIWindow *mainWindow = nil;
     for (UIWindow *w in [UIApplication sharedApplication].windows) {
         if (w != [FloatWindow shared] && w.hidden == NO && w.windowLevel == UIWindowLevelNormal) {
@@ -69,36 +77,32 @@
     if (!mainWindow) mainWindow = [UIApplication sharedApplication].keyWindow;
     if (!mainWindow) return;
     
-    // 第一步：填充账号
-    [self fillText:acc[@"account"] atPoint:mgr.accountPoint inWindow:mainWindow];
-    [FloatWindow showToast:[NSString stringWithFormat:@"已填入账号 %@", acc[@"account"]]];
-    
-    // 延时后填充密码
+    // 填充账号
+    [self fillText:account atPoint:mgr.accountPoint inWindow:mainWindow];
+    // 延时填充密码
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.delaySeconds * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [self fillText:acc[@"password"] atPoint:mgr.passwordPoint inWindow:mainWindow];
-        [FloatWindow showToast:[NSString stringWithFormat:@"已填入密码 %@", acc[@"password"]]];
+        [self fillText:password atPoint:mgr.passwordPoint inWindow:mainWindow];
     });
     
-    [[FloatWindow shared] updateBadge];
+    // 显示进度和账号（隐藏密码）
+    NSInteger currentProgress = idx + 1;
+    NSString *msg = [NSString stringWithFormat:@"进度 %ld/%ld，账号 %@", (long)currentProgress, (long)total, account];
+    [FloatWindow showToast:msg];
 }
 
-// 在指定坐标找到输入框并填入文字
 - (void)fillText:(NSString *)text atPoint:(CGPoint)point inWindow:(UIWindow *)window {
     UIView *target = [window hitTest:point withEvent:nil];
     UITextField *tf = nil;
     
-    // 如果直接点击到的就是UITextField
     if ([target isKindOfClass:[UITextField class]]) {
         tf = (UITextField *)target;
     } else {
-        // 否则遍历自身及父视图寻找最近的UITextField
         UIView *v = target;
         while (v) {
             if ([v isKindOfClass:[UITextField class]]) {
                 tf = (UITextField *)v;
                 break;
             }
-            // 搜索子视图（最多一层）
             for (UIView *sub in v.subviews) {
                 if ([sub isKindOfClass:[UITextField class]]) {
                     tf = (UITextField *)sub;
@@ -111,22 +115,18 @@
     }
     
     if (tf) {
-        // 尝试直接赋值
         tf.text = text;
         [tf sendActionsForControlEvents:UIControlEventEditingChanged];
-        // 若未生效，尝试粘贴
         if (![tf.text isEqualToString:text]) {
             [UIPasteboard generalPasteboard].string = text;
             [tf paste:nil];
         }
     } else {
-        // 未找到输入框，尝试通过剪贴板粘贴到焦点控件
         [UIPasteboard generalPasteboard].string = text;
         [[UIApplication sharedApplication] sendAction:@selector(paste:) to:nil from:nil forEvent:nil];
     }
 }
 
-// 长按弹出配置面板
 - (void)handleLongPress:(UILongPressGestureRecognizer *)longPress {
     if (longPress.state == UIGestureRecognizerStateBegan) {
         [self showEditPanel];
@@ -146,7 +146,7 @@
     [superview addSubview:cover];
     
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 480; // 增高以容纳坐标输入
+    CGFloat panelH = 480;
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 50,
                                                               panelW, panelH)];
@@ -158,7 +158,6 @@
     AccountManager *mgr = [AccountManager shared];
     int yPos = 10;
     
-    // 账号列表编辑
     UILabel *hint = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 20)];
     hint.text = @"账号列表（每行：账号|密码）";
     hint.font = [UIFont systemFontOfSize:13];
@@ -175,14 +174,12 @@
     [panel addSubview:tv];
     yPos += 130;
     
-    // 坐标配置
     NSArray *labels = @[@"账号框 X:", @"账号框 Y:", @"密码框 X:", @"密码框 Y:", @"延时(秒):"];
     NSArray *values = @[[NSString stringWithFormat:@"%.0f", mgr.accountPoint.x],
                         [NSString stringWithFormat:@"%.0f", mgr.accountPoint.y],
                         [NSString stringWithFormat:@"%.0f", mgr.passwordPoint.x],
                         [NSString stringWithFormat:@"%.0f", mgr.passwordPoint.y],
                         [NSString stringWithFormat:@"%.1f", mgr.delaySeconds]];
-    NSMutableArray *coordFields = [NSMutableArray array];
     
     for (int i = 0; i < labels.count; i++) {
         UILabel *lb = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, 80, 25)];
@@ -195,15 +192,12 @@
         tf.font = [UIFont systemFontOfSize:13];
         tf.keyboardType = (i == 4) ? UIKeyboardTypeDecimalPad : UIKeyboardTypeNumberPad;
         tf.text = values[i];
-        tf.tag = 2000 + i; // 用于保存时获取
+        tf.tag = 2000 + i;
         [panel addSubview:tf];
-        [coordFields addObject:tf];
         yPos += 30;
     }
-    
     yPos += 10;
     
-    // 按钮行
     UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     saveBtn.frame = CGRectMake(panelW/2 + 20, yPos, 80, 35);
     [saveBtn setTitle:@"保存" forState:UIControlStateNormal];
@@ -215,7 +209,6 @@
     [cancelBtn setTitle:@"取消" forState:UIControlStateNormal];
     [cancelBtn addTarget:self action:@selector(cancelAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:cancelBtn];
-    
     yPos += 40;
     
     UIButton *importBtn = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -244,16 +237,15 @@
     AccountManager *mgr = [AccountManager shared];
     [mgr updateAccountsWithText:tv.text];
     
-    // 读取坐标与延时
     NSArray *tags = @[@2000, @2001, @2002, @2003, @2004];
-    NSMutableArray *values = [NSMutableArray array];
+    NSMutableArray *vals = [NSMutableArray array];
     for (NSNumber *tag in tags) {
         UITextField *tf = (UITextField *)[panel viewWithTag:tag.integerValue];
-        [values addObject:tf.text ?: @""];
+        [vals addObject:tf.text ?: @""];
     }
-    mgr.accountPoint = CGPointMake([values[0] floatValue], [values[1] floatValue]);
-    mgr.passwordPoint = CGPointMake([values[2] floatValue], [values[3] floatValue]);
-    mgr.delaySeconds = [values[4] doubleValue];
+    mgr.accountPoint = CGPointMake([vals[0] floatValue], [vals[1] floatValue]);
+    mgr.passwordPoint = CGPointMake([vals[2] floatValue], [vals[3] floatValue]);
+    mgr.delaySeconds = [vals[4] doubleValue];
     if (mgr.delaySeconds < 0.1) mgr.delaySeconds = 0.5;
     [mgr saveToFile];
     
@@ -273,7 +265,7 @@
     UITextView *tv = (UITextView *)[panel viewWithTag:1003];
     tv.text = [[AccountManager shared] exportAccountsText];
     [[FloatWindow shared] updateBadge];
-    [FloatWindow showToast:@"已从剪贴板导入"];
+    [FloatWindow showToast:@"已导入"];
 }
 
 - (void)exportAction:(id)sender {
@@ -289,8 +281,6 @@
 }
 
 @end
-
-#pragma mark - FloatWindow 实现
 
 @implementation FloatWindow {
     FloatView *_floatView;
@@ -366,8 +356,6 @@
         _floatView.badgeLabel.text = @"0";
     }
 }
-
-#pragma mark - Toast 提醒（非阻塞）
 
 + (void)showToast:(NSString *)message {
     UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;

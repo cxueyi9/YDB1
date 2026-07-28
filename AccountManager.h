@@ -9,14 +9,17 @@
 @property (nonatomic, assign) NSInteger currentIndex;
 
 // 定位配置
-@property (nonatomic, assign) CGPoint accountPoint;   // 账号输入框坐标
-@property (nonatomic, assign) CGPoint passwordPoint;  // 密码输入框坐标
-@property (nonatomic, assign) NSTimeInterval delaySeconds; // 填充密码前的延时
+@property (nonatomic, assign) CGPoint accountPoint;
+@property (nonatomic, assign) CGPoint passwordPoint;
+@property (nonatomic, assign) NSTimeInterval delaySeconds;
 
 - (NSDictionary *)nextAccount;
 - (void)updateAccountsWithText:(NSString *)text;
 - (NSString *)exportAccountsText;
 - (void)importFromClipboard;
 - (void)exportToClipboard;
+
+// 公开保存方法，供FloatWindow调用
+- (void)saveToFile;
 
 @end
