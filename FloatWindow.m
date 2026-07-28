@@ -65,31 +65,37 @@
     NSInteger total = mgr.accounts.count;
     if (total == 0) return;
     
-    // 防止屏幕休眠
     [UIApplication sharedApplication].idleTimerDisabled = YES;
     
-    NSInteger displayIndex = mgr.currentIndex + 1;
-    NSDictionary *acc = mgr.accounts[mgr.currentIndex % total];
-    NSString *account = acc[@"account"];
-    NSString *password = acc[@"password"];
+    NSInteger displayIndex = mgr.currentIndex + 1;   // 1-based
     
+    // 如果需要记录轮次开始且是第一条，则先切换轮次
     if (mgr.needLogRoundStart && displayIndex == 1) {
-        [mgr recordLogRoundStart];
+        [mgr switchToNextRound];               // 切换轮次名称
+        [mgr recordLogRoundStart];             // 记录“X轮开始”日志
         mgr.needLogRoundStart = NO;
         [mgr saveToFile];
     }
+    
+    NSDictionary *acc = mgr.accounts[mgr.currentIndex % total];
+    NSString *account = acc[@"account"];
+    NSString *password = acc[@"password"];
     
     [mgr recordLogWithIndex:displayIndex total:total account:account];
     
     NSString *msg = [NSString stringWithFormat:@"%ld/%ld，账号 %@", (long)displayIndex, (long)total, account];
     [FloatWindow showToast:msg];
     
+    // 索引递增（已填充数+1）
     mgr.currentIndex = (mgr.currentIndex + 1) % total;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     
+    // 如果递增后 currentIndex == 0，说明本轮已全部填充完，下一轮即将开始
     if (mgr.currentIndex == 0) {
-        [mgr switchToNextRound];
+        mgr.needLogRoundStart = YES;
+        [mgr saveToFile];
+        // 注意：此时不切换轮次，界面仍显示旧轮次
     }
     
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.pasteDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -124,8 +130,9 @@
     
     AccountManager *mgr = [AccountManager shared];
     
+    // 减小面板高度，紧凑布局
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 370;  // 进一步减小高度，去除空白
+    CGFloat panelH = 325;
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -135,13 +142,13 @@
     [superview addSubview:panel];
     
     // 标题
-    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 10, panelW-30, 18)];
+    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 8, panelW-30, 18)];
     titleLabel.text = @"账号与设置";
     titleLabel.font = [UIFont boldSystemFontOfSize:15];
     [panel addSubview:titleLabel];
     
-    // 账号列表
-    UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(15, 30, panelW-30, 65)];
+    // 账号列表（缩小高度）
+    UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(15, 28, panelW-30, 55)];
     tv.layer.borderWidth = 0.5;
     tv.layer.borderColor = [UIColor colorWithWhite:0.8 alpha:1].CGColor;
     tv.layer.cornerRadius = 6;
@@ -150,14 +157,14 @@
     tv.text = [mgr exportAccountsText];
     [panel addSubview:tv];
     
-    // ---- 参数行：粘贴延时、密码延时 ----
-    CGFloat yPos = 100;
-    // 可布局宽度 (除去左右边距15*2=30)，两个组合，组合间间距10
+    // 布局参数
+    CGFloat yPos = 90;
     CGFloat leftMargin = 15;
-    CGFloat comboWidth = (panelW - 2*leftMargin - 10) / 2; // 每个组合的总宽度（标签+输入框）
+    CGFloat comboWidth = (panelW - 2*leftMargin - 10) / 2; // 左右两列组合宽度
     CGFloat labelWidth = 60;
     CGFloat tfWidth = comboWidth - labelWidth - 5;
     
+    // ---- 第一行：粘贴延时、密码延时 ----
     // 粘贴延时
     UILabel *delayLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, labelWidth, 20)];
     delayLabel.text = @"粘贴延时";
@@ -187,7 +194,7 @@
     
     yPos += 32;
     
-    // ---- 轮次名称行 ----
+    // ---- 第二行：A轮名、B轮名 ----
     UILabel *roundALabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, labelWidth, 20)];
     roundALabel.text = @"A轮名";
     roundALabel.font = [UIFont systemFontOfSize:12];
@@ -212,7 +219,8 @@
     
     yPos += 34;
     
-    // ---- 锁定开关与跳转功能 ----
+    // ---- 第三行：锁定图标 与 跳转到 ----
+    // 锁定图标
     UILabel *lockLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 60, 20)];
     lockLabel.text = @"锁定图标";
     lockLabel.font = [UIFont systemFontOfSize:12];
@@ -222,12 +230,15 @@
     lockSwitch.tag = 2002;
     [panel addSubview:lockSwitch];
     
-    // 跳转到指定行
-    UILabel *jumpLabel = [[UILabel alloc] initWithFrame:CGRectMake(secondColX, yPos, 50, 20)];
+    // 跳转到（右侧组合）
+    CGFloat jumpLabelWidth = 45;
+    CGFloat jumpBtnWidth = 45;
+    CGFloat jumpTfWidth = comboWidth - jumpLabelWidth - jumpBtnWidth - 10; // 输入框宽度
+    UILabel *jumpLabel = [[UILabel alloc] initWithFrame:CGRectMake(secondColX, yPos, jumpLabelWidth, 20)];
     jumpLabel.text = @"跳转到";
     jumpLabel.font = [UIFont systemFontOfSize:12];
     [panel addSubview:jumpLabel];
-    UITextField *jumpTF = [[UITextField alloc] initWithFrame:CGRectMake(secondColX + 50 + 5, yPos-2, tfWidth - 55 - 45, 26)]; // 减去标签宽和按钮宽
+    UITextField *jumpTF = [[UITextField alloc] initWithFrame:CGRectMake(secondColX + jumpLabelWidth + 5, yPos-2, jumpTfWidth, 26)];
     jumpTF.borderStyle = UITextBorderStyleRoundedRect;
     jumpTF.font = [UIFont systemFontOfSize:13];
     jumpTF.keyboardType = UIKeyboardTypeNumberPad;
@@ -235,7 +246,7 @@
     jumpTF.tag = 3002;
     [panel addSubview:jumpTF];
     UIButton *jumpBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    jumpBtn.frame = CGRectMake(secondColX + comboWidth - 45, yPos-2, 45, 28);
+    jumpBtn.frame = CGRectMake(secondColX + comboWidth - jumpBtnWidth, yPos-2, jumpBtnWidth, 26);
     [jumpBtn setTitle:@"Go" forState:UIControlStateNormal];
     jumpBtn.titleLabel.font = [UIFont systemFontOfSize:13];
     jumpBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.15];
@@ -249,11 +260,11 @@
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
     line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1];
     [panel addSubview:line];
-    yPos += 10;
+    yPos += 8;
     
     // 保存 / 取消按钮
     UIButton *cancelBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    cancelBtn.frame = CGRectMake(panelW/2 - 110, yPos, 95, 34);
+    cancelBtn.frame = CGRectMake(panelW/2 - 110, yPos, 95, 32);
     [cancelBtn setTitle:@"取消" forState:UIControlStateNormal];
     cancelBtn.titleLabel.font = [UIFont systemFontOfSize:14];
     cancelBtn.backgroundColor = [UIColor colorWithWhite:0.95 alpha:1];
@@ -262,7 +273,7 @@
     [panel addSubview:cancelBtn];
     
     UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    saveBtn.frame = CGRectMake(panelW/2 + 15, yPos, 95, 34);
+    saveBtn.frame = CGRectMake(panelW/2 + 15, yPos, 95, 32);
     [saveBtn setTitle:@"保存" forState:UIControlStateNormal];
     saveBtn.titleLabel.font = [UIFont systemFontOfSize:14];
     saveBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.9];
@@ -271,22 +282,22 @@
     [saveBtn addTarget:self action:@selector(saveAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:saveBtn];
     
-    yPos += 42;
+    yPos += 40;
     
-    // 当前轮次信息 (加粗加大)
+    // 当前轮次信息 (加粗显示)
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"HH:mm";
     NSString *startTimeStr = [fmt stringFromDate:mgr.roundStartTime];
     NSString *infoText = [NSString stringWithFormat:@"本次【%@】，启动时间：%@", [mgr currentRoundName], startTimeStr];
     UILabel *infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 18)];
     infoLabel.text = infoText;
-    infoLabel.font = [UIFont boldSystemFontOfSize:13];  // 加粗，比普通大一号
+    infoLabel.font = [UIFont boldSystemFontOfSize:13];
     infoLabel.textColor = [UIColor darkGrayColor];
     infoLabel.tag = 4000;
     [panel addSubview:infoLabel];
     yPos += 22;
     
-    // 日志按钮 (紧贴底部)
+    // 日志按钮
     UIButton *copyLogBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     copyLogBtn.frame = CGRectMake(15, yPos, 90, 28);
     [copyLogBtn setTitle:@"复制日志" forState:UIControlStateNormal];
@@ -305,7 +316,6 @@
     [cover addGestureRecognizer:tapOnCover];
 }
 
-// 跳转动作
 - (void)jumpAction:(UIButton *)sender {
     UIView *panel = [self.superview viewWithTag:1002];
     UITextField *jumpTF = (UITextField *)[panel viewWithTag:3002];
@@ -322,6 +332,7 @@
     if (targetLine > total) targetLine = total;
     
     mgr.currentIndex = targetLine - 1;
+    // 跳转后不清除 needLogRoundStart，保持轮次连续性
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     [FloatWindow showToast:[NSString stringWithFormat:@"已跳转到第 %ld 行", (long)targetLine]];
@@ -472,7 +483,7 @@
 - (void)updateBadge {
     AccountManager *mgr = [AccountManager shared];
     NSInteger total = mgr.accounts.count;
-    NSInteger progress = mgr.currentIndex;
+    NSInteger progress = mgr.currentIndex; // 已填充数量
     if (total > 0) {
         _floatView.badgeLabel.text = [NSString stringWithFormat:@"%ld/%ld", (long)progress, (long)total];
     } else {
