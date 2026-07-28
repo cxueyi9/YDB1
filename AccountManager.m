@@ -18,6 +18,10 @@
 - (instancetype)init {
     if (self = [super init]) {
         _accounts = [NSMutableArray array];
+        // 默认值
+        _accountPoint = CGPointMake(100, 200);
+        _passwordPoint = CGPointMake(100, 260);
+        _delaySeconds = 0.5;
     }
     return self;
 }
@@ -84,7 +88,10 @@
     }
     NSDictionary *data = @{
         @"accounts": arr,
-        @"currentIndex": @(self.currentIndex)
+        @"currentIndex": @(self.currentIndex),
+        @"accountPoint": NSStringFromCGPoint(self.accountPoint),
+        @"passwordPoint": NSStringFromCGPoint(self.passwordPoint),
+        @"delaySeconds": @(self.delaySeconds)
     };
     [data writeToFile:[self dataFilePath] atomically:YES];
 }
@@ -98,6 +105,13 @@
         }
         NSNumber *idx = data[@"currentIndex"];
         self.currentIndex = idx ? [idx integerValue] : 0;
+        
+        NSString *ap = data[@"accountPoint"];
+        if (ap) self.accountPoint = CGPointFromString(ap);
+        NSString *pp = data[@"passwordPoint"];
+        if (pp) self.passwordPoint = CGPointFromString(pp);
+        NSNumber *delay = data[@"delaySeconds"];
+        if (delay) self.delaySeconds = [delay doubleValue];
     }
 }
 
