@@ -8,10 +8,12 @@
 @property (nonatomic, strong, readonly) NSArray<NSDictionary *> *accounts;
 @property (nonatomic, assign) NSInteger currentIndex;
 
-// 定位配置
-@property (nonatomic, assign) CGPoint accountPoint;
-@property (nonatomic, assign) CGPoint passwordPoint;
-@property (nonatomic, assign) NSTimeInterval delaySeconds;
+// 浮窗固定位置（左上角坐标，默认 (20, 100)）
+@property (nonatomic, assign) CGPoint floatWindowPoint;
+// 点击后粘贴前等待时间（秒）
+@property (nonatomic, assign) NSTimeInterval pasteDelay;
+// 粘贴完账号后、粘贴密码前的等待时间（秒）
+@property (nonatomic, assign) NSTimeInterval passwordDelay;
 
 - (NSDictionary *)nextAccount;
 - (void)updateAccountsWithText:(NSString *)text;
@@ -19,7 +21,10 @@
 - (void)importFromClipboard;
 - (void)exportToClipboard;
 
-// 公开保存方法，供FloatWindow调用
-- (void)saveToFile;
+// 日志功能
+- (void)recordLogWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account;
+- (NSString *)logFilePath;
+- (NSString *)readLogContent;
 
+- (void)saveToFile;
 @end

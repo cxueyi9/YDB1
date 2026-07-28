@@ -18,10 +18,9 @@
 - (instancetype)init {
     if (self = [super init]) {
         _accounts = [NSMutableArray array];
-        // 默认值
-        _accountPoint = CGPointMake(100, 200);
-        _passwordPoint = CGPointMake(100, 260);
-        _delaySeconds = 0.5;
+        self.floatWindowPoint = CGPointMake(20, 100);
+        self.pasteDelay = 1.0;
+        self.passwordDelay = 0.5;
     }
     return self;
 }
@@ -69,16 +68,43 @@
 }
 
 - (void)exportToClipboard {
-    NSString *text = [self exportAccountsText];
-    [UIPasteboard generalPasteboard].string = text;
+    [UIPasteboard generalPasteboard].string = [self exportAccountsText];
 }
 
-#pragma mark - 文件持久化
+#pragma mark - 日志
+
+- (NSString *)logFilePath {
+    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    return [paths.firstObject stringByAppendingPathComponent:@"fill_log.txt"];
+}
+
+- (void)recordLogWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account {
+    NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
+    fmt.dateFormat = @"yyyy/M/d HH:mm";
+    NSString *timeStr = [fmt stringFromDate:[NSDate date]];
+    NSString *line = [NSString stringWithFormat:@"%ld/%ld, %@, %@\n", (long)index, (long)total, timeStr, account];
+    
+    NSString *path = [self logFilePath];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (![fm fileExistsAtPath:path]) {
+        [line writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    } else {
+        NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:path];
+        [fh seekToEndOfFile];
+        [fh writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+        [fh closeFile];
+    }
+}
+
+- (NSString *)readLogContent {
+    return [NSString stringWithContentsOfFile:[self logFilePath] encoding:NSUTF8StringEncoding error:nil] ?: @"";
+}
+
+#pragma mark - 持久化
 
 - (NSString *)dataFilePath {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-    NSString *docDir = paths.firstObject;
-    return [docDir stringByAppendingPathComponent:@"com.youdaibao.accounts.plist"];
+    return [paths.firstObject stringByAppendingPathComponent:@"com.youdaibao.config.plist"];
 }
 
 - (void)saveToFile {
@@ -89,9 +115,9 @@
     NSDictionary *data = @{
         @"accounts": arr,
         @"currentIndex": @(self.currentIndex),
-        @"accountPoint": NSStringFromCGPoint(self.accountPoint),
-        @"passwordPoint": NSStringFromCGPoint(self.passwordPoint),
-        @"delaySeconds": @(self.delaySeconds)
+        @"floatWindowPoint": NSStringFromCGPoint(self.floatWindowPoint),
+        @"pasteDelay": @(self.pasteDelay),
+        @"passwordDelay": @(self.passwordDelay)
     };
     [data writeToFile:[self dataFilePath] atomically:YES];
 }
@@ -100,18 +126,15 @@
     NSDictionary *data = [NSDictionary dictionaryWithContentsOfFile:[self dataFilePath]];
     if (data) {
         NSArray *arr = data[@"accounts"];
-        if (arr) {
-            _accounts = [arr mutableCopy];
-        }
+        if (arr) _accounts = [arr mutableCopy];
         NSNumber *idx = data[@"currentIndex"];
         self.currentIndex = idx ? [idx integerValue] : 0;
-        
-        NSString *ap = data[@"accountPoint"];
-        if (ap) self.accountPoint = CGPointFromString(ap);
-        NSString *pp = data[@"passwordPoint"];
-        if (pp) self.passwordPoint = CGPointFromString(pp);
-        NSNumber *delay = data[@"delaySeconds"];
-        if (delay) self.delaySeconds = [delay doubleValue];
+        NSString *fp = data[@"floatWindowPoint"];
+        if (fp) self.floatWindowPoint = CGPointFromString(fp);
+        NSNumber *pd = data[@"pasteDelay"];
+        if (pd) self.pasteDelay = [pd doubleValue];
+        NSNumber *pwd = data[@"passwordDelay"];
+        if (pwd) self.passwordDelay = [pwd doubleValue];
     }
 }
 
