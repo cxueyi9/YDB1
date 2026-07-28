@@ -1,6 +1,11 @@
 #import "FloatWindow.h"
 #import "AccountManager.h"
 
+// 类扩展：声明私有方法
+@interface FloatWindow ()
+- (void)updateFloatViewPosition;
+@end
+
 @interface FloatView : UIView
 @property (nonatomic, weak) UILabel *badgeLabel;
 @property (nonatomic, assign) BOOL isEditing;
@@ -22,7 +27,6 @@
         [self addSubview:badge];
         _badgeLabel = badge;
         
-        // 只保留点击和长按手势，不再添加拖拽
         UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
         [self addGestureRecognizer:tap];
         
@@ -39,30 +43,24 @@
     NSInteger total = mgr.accounts.count;
     if (total == 0) return;
     
-    // 当前要填充的账号（索引尚未递增）
     NSInteger idx = mgr.currentIndex;
     NSDictionary *acc = mgr.accounts[idx % total];
     NSString *account = acc[@"account"];
     NSString *password = acc[@"password"];
     
-    // 记录日志（进度 = idx+1，总数 = total）
     [mgr recordLogWithIndex:idx + 1 total:total account:account];
     
-    // 索引 +1，准备下次填充
     mgr.currentIndex = (idx + 1) % total;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     
-    // 显示进度提示
     NSString *msg = [NSString stringWithFormat:@"%ld/%ld，账号 %@", (long)(idx + 1), (long)total, account];
     [FloatWindow showToast:msg];
     
-    // 延时 pasteDelay 秒后粘贴账号
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.pasteDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [UIPasteboard generalPasteboard].string = account;
         [[UIApplication sharedApplication] sendAction:@selector(paste:) to:nil from:nil forEvent:nil];
         
-        // 再延时 passwordDelay 秒后粘贴密码
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.passwordDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [UIPasteboard generalPasteboard].string = password;
             [[UIApplication sharedApplication] sendAction:@selector(paste:) to:nil from:nil forEvent:nil];
@@ -101,7 +99,6 @@
     AccountManager *mgr = [AccountManager shared];
     int yPos = 10;
     
-    // 账号列表编辑
     UILabel *hint = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 20)];
     hint.text = @"账号列表（每行：账号|密码）";
     hint.font = [UIFont systemFontOfSize:13];
@@ -118,7 +115,6 @@
     [panel addSubview:tv];
     yPos += 90;
     
-    // 配置项：浮窗 X/Y，粘贴延时，密码延时
     NSArray *labels = @[@"浮窗 X:", @"浮窗 Y:", @"粘贴延时(秒):", @"密码延时(秒):"];
     NSArray *values = @[[NSString stringWithFormat:@"%.0f", mgr.floatWindowPoint.x],
                         [NSString stringWithFormat:@"%.0f", mgr.floatWindowPoint.y],
@@ -142,7 +138,6 @@
     }
     yPos += 10;
     
-    // 第一行按钮：保存 / 取消
     UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     saveBtn.frame = CGRectMake(panelW/2 + 20, yPos, 80, 35);
     [saveBtn setTitle:@"保存" forState:UIControlStateNormal];
@@ -156,7 +151,6 @@
     [panel addSubview:cancelBtn];
     yPos += 40;
     
-    // 第二行按钮：导入 / 导出 / 复制日志
     UIButton *importBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     importBtn.frame = CGRectMake(15, yPos, 100, 35);
     [importBtn setTitle:@"从剪贴板导入" forState:UIControlStateNormal];
@@ -190,7 +184,6 @@
     AccountManager *mgr = [AccountManager shared];
     [mgr updateAccountsWithText:tv.text];
     
-    // 读取浮窗坐标及延时
     NSArray *tags = @[@2000, @2001, @2002, @2003];
     NSMutableArray *vals = [NSMutableArray array];
     for (NSNumber *tag in tags) {
@@ -204,7 +197,6 @@
     if (mgr.passwordDelay < 0.1) mgr.passwordDelay = 0.5;
     [mgr saveToFile];
     
-    // 更新浮窗位置
     FloatWindow *fw = [FloatWindow shared];
     [fw updateFloatViewPosition];
     [fw updateBadge];
@@ -250,8 +242,6 @@
 }
 
 @end
-
-#pragma mark - FloatWindow 实现
 
 @implementation FloatWindow {
     FloatView *_floatView;
