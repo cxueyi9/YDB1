@@ -67,9 +67,8 @@
     
     [UIApplication sharedApplication].idleTimerDisabled = YES;
     
-    NSInteger displayIndex = mgr.currentIndex + 1;   // 1-based
+    NSInteger displayIndex = mgr.currentIndex + 1;
     
-    // 如果是本轮第一条，切换轮次并记录开始
     if (mgr.needLogRoundStart && displayIndex == 1) {
         [mgr switchToNextRound];
         [mgr recordLogRoundStart];
@@ -81,7 +80,6 @@
     NSString *account = acc[@"account"];
     NSString *password = acc[@"password"];
     
-    // 记录本地日志和本轮记录（用于上传）
     [mgr recordLogWithIndex:displayIndex total:total account:account];
     [mgr addRoundRecordWithIndex:displayIndex total:total account:account];
     
@@ -92,7 +90,6 @@
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     
-    // 一轮结束，延迟上传
     if (mgr.currentIndex == 0) {
         mgr.needLogRoundStart = YES;
         [mgr saveToFile];
@@ -107,7 +104,6 @@
         });
     }
     
-    // 延时粘贴
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.pasteDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [UIPasteboard generalPasteboard].string = account;
         [[UIApplication sharedApplication] sendAction:@selector(paste:) to:nil from:nil forEvent:nil];
@@ -141,7 +137,7 @@
     AccountManager *mgr = [AccountManager shared];
     
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 395;  // 稍微加高以容纳服务器地址行
+    CGFloat panelH = 430;  // 适当加高
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -280,7 +276,7 @@
     [panel addSubview:line];
     yPos += 8;
     
-    // 保存 / 取消按钮
+    // 保存 / 取消
     UIButton *cancelBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     cancelBtn.frame = CGRectMake(panelW/2 - 110, yPos, 95, 32);
     [cancelBtn setTitle:@"取消" forState:UIControlStateNormal];
@@ -302,7 +298,7 @@
     
     yPos += 40;
     
-    // 当前轮次信息（加粗）
+    // 当前轮次信息
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"HH:mm";
     NSString *startTimeStr = [fmt stringFromDate:mgr.roundStartTime];
@@ -313,11 +309,9 @@
     infoLabel.textColor = [UIColor darkGrayColor];
     infoLabel.tag = 4000;
     [panel addSubview:infoLabel];
+    yPos += 22;
     
-    
-    yPos += 42; // 紧接信息标签下方
-    
-    // 日志按钮 + 补上传按钮
+    // 日志按钮行 + 补上传
     UIButton *copyLogBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     copyLogBtn.frame = CGRectMake(15, yPos, 90, 28);
     [copyLogBtn setTitle:@"复制日志" forState:UIControlStateNormal];
@@ -326,14 +320,14 @@
     [panel addSubview:copyLogBtn];
     
     UIButton *exportClearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    exportClearBtn.frame = CGRectMake(panelW - 195, yPos, 90, 28);
+    exportClearBtn.frame = CGRectMake(panelW - 285, yPos, 90, 28);
     [exportClearBtn setTitle:@"导出并清空" forState:UIControlStateNormal];
     exportClearBtn.titleLabel.font = [UIFont systemFontOfSize:12];
     [exportClearBtn addTarget:self action:@selector(exportAndClearLogAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:exportClearBtn];
     
     UIButton *uploadStagedBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    uploadStagedBtn.frame = CGRectMake(panelW - 105, yPos, 90, 28);
+    uploadStagedBtn.frame = CGRectMake(panelW - 195, yPos, 90, 28);
     [uploadStagedBtn setTitle:@"补上传" forState:UIControlStateNormal];
     uploadStagedBtn.titleLabel.font = [UIFont systemFontOfSize:12];
     uploadStagedBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.15];
@@ -428,13 +422,6 @@
     [FloatWindow showToast:@"日志已导出并清空"];
 }
 
-- (void)dismissPanel {
-    UIView *superview = self.superview;
-    [[superview viewWithTag:1001] removeFromSuperview];
-    [[superview viewWithTag:1002] removeFromSuperview];
-    self.isEditing = NO;
-}
-
 - (void)uploadStagedAction:(id)sender {
     [[AccountManager shared] uploadStagedRecordsWithCompletion:^(BOOL success, NSString *msg) {
         if (success) {
@@ -443,6 +430,13 @@
             [FloatWindow showToast:[NSString stringWithFormat:@"补上传失败: %@", msg]];
         }
     }];
+}
+
+- (void)dismissPanel {
+    UIView *superview = self.superview;
+    [[superview viewWithTag:1001] removeFromSuperview];
+    [[superview viewWithTag:1002] removeFromSuperview];
+    self.isEditing = NO;
 }
 
 @end

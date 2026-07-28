@@ -6,19 +6,25 @@
 + (instancetype)shared;
 
 @property (nonatomic, strong, readonly) NSArray<NSDictionary *> *accounts;
-@property (nonatomic, assign) NSInteger currentIndex;
+@property (nonatomic, assign) NSInteger currentIndex;          // 已填充数量
 
+// 浮窗位置
 @property (nonatomic, assign) CGPoint floatWindowPoint;
+// 粘贴前等待时间（秒）
 @property (nonatomic, assign) NSTimeInterval pasteDelay;
+// 密码粘贴等待时间（秒）
 @property (nonatomic, assign) NSTimeInterval passwordDelay;
+// 是否锁定图标
 @property (nonatomic, assign) BOOL floatLocked;
 
-@property (nonatomic, assign) NSInteger currentRound;
+// 轮次管理
+@property (nonatomic, assign) NSInteger currentRound;          // 0 或 1
 @property (nonatomic, copy) NSString *roundAName;
 @property (nonatomic, copy) NSString *roundBName;
 @property (nonatomic, strong) NSDate *roundStartTime;
-@property (nonatomic, assign) BOOL needLogRoundStart;
+@property (nonatomic, assign) BOOL needLogRoundStart;          // 是否需要在下次填充时记录轮次开始
 
+// 服务器上传
 @property (nonatomic, copy) NSString *serverURL;
 @property (nonatomic, strong, readonly) NSMutableArray<NSDictionary *> *currentRoundRecords;
 
@@ -36,7 +42,7 @@
 - (NSString *)readLogContent;
 - (void)clearLog;
 
-// 本轮记录
+// 本轮记录（用于上传）
 - (void)addRoundRecordWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account;
 - (void)uploadRoundRecordsWithCompletion:(void(^)(BOOL success, NSString *msg))completion;
 
