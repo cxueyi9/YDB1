@@ -315,7 +315,9 @@
     [panel addSubview:infoLabel];
     yPos += 22;
     
-    // 日志按钮
+    yPos += 42; // 紧接信息标签下方
+    
+    // 日志按钮 + 补上传按钮
     UIButton *copyLogBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     copyLogBtn.frame = CGRectMake(15, yPos, 90, 28);
     [copyLogBtn setTitle:@"复制日志" forState:UIControlStateNormal];
@@ -324,11 +326,20 @@
     [panel addSubview:copyLogBtn];
     
     UIButton *exportClearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    exportClearBtn.frame = CGRectMake(panelW - 105, yPos, 90, 28);
+    exportClearBtn.frame = CGRectMake(panelW - 195, yPos, 90, 28);
     [exportClearBtn setTitle:@"导出并清空" forState:UIControlStateNormal];
     exportClearBtn.titleLabel.font = [UIFont systemFontOfSize:12];
     [exportClearBtn addTarget:self action:@selector(exportAndClearLogAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:exportClearBtn];
+    
+    UIButton *uploadStagedBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    uploadStagedBtn.frame = CGRectMake(panelW - 105, yPos, 90, 28);
+    [uploadStagedBtn setTitle:@"补上传" forState:UIControlStateNormal];
+    uploadStagedBtn.titleLabel.font = [UIFont systemFontOfSize:12];
+    uploadStagedBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.15];
+    uploadStagedBtn.layer.cornerRadius = 6;
+    [uploadStagedBtn addTarget:self action:@selector(uploadStagedAction:) forControlEvents:UIControlEventTouchUpInside];
+    [panel addSubview:uploadStagedBtn];
     
     UITapGestureRecognizer *tapOnCover = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(cancelAction:)];
     [cover addGestureRecognizer:tapOnCover];
