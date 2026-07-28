@@ -17,14 +17,13 @@
         UILabel *badge = [[UILabel alloc] initWithFrame:self.bounds];
         badge.textAlignment = NSTextAlignmentCenter;
         badge.textColor = [UIColor whiteColor];
-        badge.font = [UIFont boldSystemFontOfSize:13]; // 缩小字体以适应进度格式
+        badge.font = [UIFont boldSystemFontOfSize:13];
         badge.adjustsFontSizeToFitWidth = YES;
         badge.minimumScaleFactor = 0.5;
         badge.text = @"0/0";
         [self addSubview:badge];
         _badgeLabel = badge;
         
-        // 拖拽手势（根据锁定状态决定是否生效）
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
         [self addGestureRecognizer:pan];
         
@@ -39,7 +38,7 @@
 
 - (void)handlePan:(UIPanGestureRecognizer *)pan {
     if (self.isEditing) return;
-    if ([AccountManager shared].floatLocked) return; // 锁定则禁止拖拽
+    if ([AccountManager shared].floatLocked) return;
     
     CGPoint translation = [pan translationInView:self.superview];
     CGPoint newCenter = CGPointMake(self.center.x + translation.x, self.center.y + translation.y);
@@ -52,7 +51,6 @@
     self.center = newCenter;
     [pan setTranslation:CGPointZero inView:self.superview];
     
-    // 拖拽结束时保存当前位置
     if (pan.state == UIGestureRecognizerStateEnded) {
         AccountManager *mgr = [AccountManager shared];
         mgr.floatWindowPoint = self.frame.origin;
@@ -67,25 +65,20 @@
     NSInteger total = mgr.accounts.count;
     if (total == 0) return;
     
-    // currentIndex 表示已填充数量，所以本次填充的是第 currentIndex 条（0-based），显示序号为 currentIndex+1
-    NSInteger displayIndex = mgr.currentIndex + 1; // 1-based
+    NSInteger displayIndex = mgr.currentIndex + 1;
     NSDictionary *acc = mgr.accounts[mgr.currentIndex % total];
     NSString *account = acc[@"account"];
     NSString *password = acc[@"password"];
     
-    // 记录日志
     [mgr recordLogWithIndex:displayIndex total:total account:account];
     
-    // 进度提示（显示当前填充的序号）
     NSString *msg = [NSString stringWithFormat:@"%ld/%ld，账号 %@", (long)displayIndex, (long)total, account];
     [FloatWindow showToast:msg];
     
-    // 移动索引（已填充数+1）
     mgr.currentIndex = (mgr.currentIndex + 1) % total;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     
-    // 延时粘贴
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.pasteDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [UIPasteboard generalPasteboard].string = account;
         [[UIApplication sharedApplication] sendAction:@selector(paste:) to:nil from:nil forEvent:nil];
@@ -115,122 +108,129 @@
     cover.tag = 1001;
     [superview addSubview:cover];
     
-    CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 440; // 高度调整
+    // 重新设计面板尺寸，紧凑布局
+    CGFloat panelW = screenBounds.size.width - 50;   // 左右留边
+    CGFloat panelH = 330;                             // 减小高度
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
-                                                              (screenBounds.size.height - panelH)/2 - 50,
+                                                              (screenBounds.size.height - panelH)/2 - 30,
                                                               panelW, panelH)];
     panel.backgroundColor = [UIColor whiteColor];
-    panel.layer.cornerRadius = 12;
+    panel.layer.cornerRadius = 14;
     panel.tag = 1002;
     [superview addSubview:panel];
     
     AccountManager *mgr = [AccountManager shared];
-    int yPos = 10;
     
-    // 账号列表编辑
-    UILabel *hint = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 20)];
-    hint.text = @"账号列表（每行：账号|密码）";
-    hint.font = [UIFont systemFontOfSize:13];
-    hint.textColor = [UIColor grayColor];
-    [panel addSubview:hint];
-    yPos += 22;
+    // 顶部标题
+    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 12, panelW-30, 20)];
+    titleLabel.text = @"账号与设置";
+    titleLabel.font = [UIFont boldSystemFontOfSize:15];
+    titleLabel.textColor = [UIColor blackColor];
+    [panel addSubview:titleLabel];
     
-    UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 80)];
+    // 账号输入框 (缩小高度)
+    UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(15, 35, panelW-30, 80)];
     tv.layer.borderWidth = 0.5;
-    tv.layer.borderColor = [UIColor lightGrayColor].CGColor;
-    tv.font = [UIFont systemFontOfSize:14];
+    tv.layer.borderColor = [UIColor colorWithWhite:0.8 alpha:1].CGColor;
+    tv.layer.cornerRadius = 6;
+    tv.font = [UIFont systemFontOfSize:13];
     tv.tag = 1003;
     tv.text = [mgr exportAccountsText];
     [panel addSubview:tv];
-    yPos += 90;
     
-    // 配置项：粘贴延时，密码延时，锁定图标
-    NSArray *labels = @[@"粘贴延时(秒):", @"密码延时(秒):", @"锁定图标:"];
-    NSArray *values = @[[NSString stringWithFormat:@"%.1f", mgr.pasteDelay],
-                        [NSString stringWithFormat:@"%.1f", mgr.passwordDelay]];
+    // 设置区域开始 Y
+    CGFloat yPos = 125;
     
-    for (int i = 0; i < 2; i++) {
-        UILabel *lb = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, 100, 25)];
-        lb.text = labels[i];
-        lb.font = [UIFont systemFontOfSize:13];
-        [panel addSubview:lb];
-        
-        UITextField *tf = [[UITextField alloc] initWithFrame:CGRectMake(120, yPos, panelW-150, 25)];
-        tf.borderStyle = UITextBorderStyleRoundedRect;
-        tf.font = [UIFont systemFontOfSize:13];
-        tf.keyboardType = UIKeyboardTypeDecimalPad;
-        tf.text = values[i];
-        tf.tag = 2000 + i;
-        [panel addSubview:tf];
-        yPos += 30;
-    }
+    // 一行两个输入框：粘贴延时 / 密码延时
+    CGFloat fieldW = (panelW - 40) / 2;
+    UILabel *delayLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, 60, 20)];
+    delayLabel.text = @"粘贴延时";
+    delayLabel.font = [UIFont systemFontOfSize:12];
+    [panel addSubview:delayLabel];
+    UITextField *delayTF = [[UITextField alloc] initWithFrame:CGRectMake(75, yPos, fieldW-30, 28)];
+    delayTF.borderStyle = UITextBorderStyleRoundedRect;
+    delayTF.font = [UIFont systemFontOfSize:13];
+    delayTF.keyboardType = UIKeyboardTypeDecimalPad;
+    delayTF.text = [NSString stringWithFormat:@"%.1f", mgr.pasteDelay];
+    delayTF.tag = 2000;
+    [panel addSubview:delayTF];
     
-    // 锁定图标开关
-    UILabel *lockLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, 100, 25)];
-    lockLabel.text = @"锁定图标:";
-    lockLabel.font = [UIFont systemFontOfSize:13];
+    UILabel *pwdLabel = [[UILabel alloc] initWithFrame:CGRectMake(15 + fieldW + 15, yPos, 60, 20)];
+    pwdLabel.text = @"密码延时";
+    pwdLabel.font = [UIFont systemFontOfSize:12];
+    [panel addSubview:pwdLabel];
+    UITextField *pwdDelayTF = [[UITextField alloc] initWithFrame:CGRectMake(75 + fieldW + 15, yPos, fieldW-30, 28)];
+    pwdDelayTF.borderStyle = UITextBorderStyleRoundedRect;
+    pwdDelayTF.font = [UIFont systemFontOfSize:13];
+    pwdDelayTF.keyboardType = UIKeyboardTypeDecimalPad;
+    pwdDelayTF.text = [NSString stringWithFormat:@"%.1f", mgr.passwordDelay];
+    pwdDelayTF.tag = 2001;
+    [panel addSubview:pwdDelayTF];
+    
+    yPos += 38;
+    
+    // 锁定开关 + 重置进度按钮 (同一行)
+    UILabel *lockLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, 60, 20)];
+    lockLabel.text = @"锁定图标";
+    lockLabel.font = [UIFont systemFontOfSize:12];
     [panel addSubview:lockLabel];
-    
-    UISwitch *lockSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(120, yPos, 51, 31)];
+    UISwitch *lockSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(80, yPos-5, 51, 31)];
     lockSwitch.on = mgr.floatLocked;
     lockSwitch.tag = 2002;
     [panel addSubview:lockSwitch];
-    yPos += 35;
     
-    yPos += 5;
+    UIButton *resetBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    resetBtn.frame = CGRectMake(panelW - 100, yPos-2, 85, 28);
+    [resetBtn setTitle:@"重置进度" forState:UIControlStateNormal];
+    resetBtn.titleLabel.font = [UIFont systemFontOfSize:12];
+    resetBtn.backgroundColor = [UIColor colorWithRed:0.9 green:0.3 blue:0.3 alpha:0.1];
+    resetBtn.layer.cornerRadius = 6;
+    [resetBtn addTarget:self action:@selector(resetProgressAction:) forControlEvents:UIControlEventTouchUpInside];
+    [panel addSubview:resetBtn];
     
-    // 按钮：保存 / 取消
+    yPos += 38;
+    
+    // 底部分隔线
+    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
+    line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1];
+    [panel addSubview:line];
+    yPos += 12;
+    
+    // 底部按钮：保存 / 取消
+    UIButton *cancelBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    cancelBtn.frame = CGRectMake(panelW/2 - 120, yPos, 100, 36);
+    [cancelBtn setTitle:@"取消" forState:UIControlStateNormal];
+    cancelBtn.titleLabel.font = [UIFont systemFontOfSize:14];
+    cancelBtn.backgroundColor = [UIColor colorWithWhite:0.95 alpha:1];
+    cancelBtn.layer.cornerRadius = 8;
+    [cancelBtn addTarget:self action:@selector(cancelAction:) forControlEvents:UIControlEventTouchUpInside];
+    [panel addSubview:cancelBtn];
+    
     UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    saveBtn.frame = CGRectMake(panelW/2 + 20, yPos, 80, 35);
+    saveBtn.frame = CGRectMake(panelW/2 + 20, yPos, 100, 36);
     [saveBtn setTitle:@"保存" forState:UIControlStateNormal];
+    saveBtn.titleLabel.font = [UIFont systemFontOfSize:14];
+    saveBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.9];
+    [saveBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    saveBtn.layer.cornerRadius = 8;
     [saveBtn addTarget:self action:@selector(saveAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:saveBtn];
     
-    UIButton *cancelBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    cancelBtn.frame = CGRectMake(panelW/2 - 100, yPos, 80, 35);
-    [cancelBtn setTitle:@"取消" forState:UIControlStateNormal];
-    [cancelBtn addTarget:self action:@selector(cancelAction:) forControlEvents:UIControlEventTouchUpInside];
-    [panel addSubview:cancelBtn];
-    yPos += 40;
-    
-    // 功能按钮行1：导入 / 导出账号 / 重置进度
-    UIButton *importBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    importBtn.frame = CGRectMake(15, yPos, 90, 35);
-    [importBtn setTitle:@"从剪贴板导入" forState:UIControlStateNormal];
-    importBtn.titleLabel.font = [UIFont systemFontOfSize:11];
-    [importBtn addTarget:self action:@selector(importAction:) forControlEvents:UIControlEventTouchUpInside];
-    [panel addSubview:importBtn];
-    
-    UIButton *exportBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    exportBtn.frame = CGRectMake(panelW/2 - 45, yPos, 90, 35);
-    [exportBtn setTitle:@"导出账号" forState:UIControlStateNormal];
-    exportBtn.titleLabel.font = [UIFont systemFontOfSize:11];
-    [exportBtn addTarget:self action:@selector(exportAction:) forControlEvents:UIControlEventTouchUpInside];
-    [panel addSubview:exportBtn];
-    
-    UIButton *resetBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    resetBtn.frame = CGRectMake(panelW - 105, yPos, 90, 35);
-    [resetBtn setTitle:@"重置进度" forState:UIControlStateNormal];
-    resetBtn.titleLabel.font = [UIFont systemFontOfSize:11];
-    [resetBtn addTarget:self action:@selector(resetProgressAction:) forControlEvents:UIControlEventTouchUpInside];
-    [panel addSubview:resetBtn];
-    yPos += 40;
-    
-    // 功能按钮行2：复制日志 / 导出日志并清空
+    // 日志按钮行（单独一行，靠底部）
+    yPos += 44;
     UIButton *copyLogBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    copyLogBtn.frame = CGRectMake(15, yPos, 90, 35);
+    copyLogBtn.frame = CGRectMake(15, yPos, 90, 30);
     [copyLogBtn setTitle:@"复制日志" forState:UIControlStateNormal];
-    copyLogBtn.titleLabel.font = [UIFont systemFontOfSize:11];
+    copyLogBtn.titleLabel.font = [UIFont systemFontOfSize:12];
     [copyLogBtn addTarget:self action:@selector(copyLogAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:copyLogBtn];
     
-    UIButton *exportClearLogBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    exportClearLogBtn.frame = CGRectMake(panelW - 105, yPos, 90, 35);
-    [exportClearLogBtn setTitle:@"导出并清空" forState:UIControlStateNormal];
-    exportClearLogBtn.titleLabel.font = [UIFont systemFontOfSize:11];
-    [exportClearLogBtn addTarget:self action:@selector(exportAndClearLogAction:) forControlEvents:UIControlEventTouchUpInside];
-    [panel addSubview:exportClearLogBtn];
+    UIButton *exportClearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    exportClearBtn.frame = CGRectMake(panelW - 105, yPos, 90, 30);
+    [exportClearBtn setTitle:@"导出并清空" forState:UIControlStateNormal];
+    exportClearBtn.titleLabel.font = [UIFont systemFontOfSize:12];
+    [exportClearBtn addTarget:self action:@selector(exportAndClearLogAction:) forControlEvents:UIControlEventTouchUpInside];
+    [panel addSubview:exportClearBtn];
     
     UITapGestureRecognizer *tapOnCover = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(cancelAction:)];
     [cover addGestureRecognizer:tapOnCover];
@@ -242,7 +242,13 @@
     UITextView *tv = (UITextView *)[panel viewWithTag:1003];
     
     AccountManager *mgr = [AccountManager shared];
-    [mgr updateAccountsWithText:tv.text];
+    NSString *newText = tv.text;
+    NSString *originalText = [mgr exportAccountsText];
+    
+    // 只有账号列表内容发生变化时才更新列表并重置进度
+    if (![newText isEqualToString:originalText]) {
+        [mgr updateAccountsWithText:newText];  // 内部会重置 currentIndex = 0
+    }
     
     // 读取延时配置
     UITextField *delayTF = (UITextField *)[panel viewWithTag:2000];
@@ -259,26 +265,11 @@
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     [self dismissPanel];
-    [FloatWindow showToast:@"配置已保存"];
+    [FloatWindow showToast:@"设置已保存"];
 }
 
 - (void)cancelAction:(id)sender {
     [self dismissPanel];
-}
-
-- (void)importAction:(id)sender {
-    [[AccountManager shared] importFromClipboard];
-    UIView *superview = self.superview;
-    UIView *panel = [superview viewWithTag:1002];
-    UITextView *tv = (UITextView *)[panel viewWithTag:1003];
-    tv.text = [[AccountManager shared] exportAccountsText];
-    [[FloatWindow shared] updateBadge];
-    [FloatWindow showToast:@"已导入"];
-}
-
-- (void)exportAction:(id)sender {
-    [[AccountManager shared] exportToClipboard];
-    [FloatWindow showToast:@"账号已复制到剪贴板"];
 }
 
 - (void)resetProgressAction:(id)sender {
