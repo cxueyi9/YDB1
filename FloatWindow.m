@@ -65,27 +65,49 @@
     NSInteger total = mgr.accounts.count;
     if (total == 0) return;
     
-    NSInteger displayIndex = mgr.currentIndex + 1;
+    // 防止屏幕休眠：开始操作
+    [UIApplication sharedApplication].idleTimerDisabled = YES;
+    
+    NSInteger displayIndex = mgr.currentIndex + 1;  // 1-based
     NSDictionary *acc = mgr.accounts[mgr.currentIndex % total];
     NSString *account = acc[@"account"];
     NSString *password = acc[@"password"];
     
+    // 如果需要记录轮次开始（新一轮的第一条）
+    if (mgr.needLogRoundStart && displayIndex == 1) {
+        [mgr recordLogRoundStart];
+        mgr.needLogRoundStart = NO;
+        [mgr saveToFile];
+    }
+    
+    // 记录填充日志
     [mgr recordLogWithIndex:displayIndex total:total account:account];
     
     NSString *msg = [NSString stringWithFormat:@"%ld/%ld，账号 %@", (long)displayIndex, (long)total, account];
     [FloatWindow showToast:msg];
     
+    // 索引递增
     mgr.currentIndex = (mgr.currentIndex + 1) % total;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     
+    // 检查是否完成一轮（currentIndex == 0 表示刚填充完最后一个，下一轮将从0开始）
+    if (mgr.currentIndex == 0) {
+        [mgr switchToNextRound];   // 切换轮次，设置 needLogRoundStart = YES
+    }
+    
+    // 延时粘贴账号
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.pasteDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [UIPasteboard generalPasteboard].string = account;
         [[UIApplication sharedApplication] sendAction:@selector(paste:) to:nil from:nil forEvent:nil];
         
+        // 延时粘贴密码
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.passwordDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [UIPasteboard generalPasteboard].string = password;
             [[UIApplication sharedApplication] sendAction:@selector(paste:) to:nil from:nil forEvent:nil];
+            
+            // 操作完成，恢复屏幕休眠
+            [UIApplication sharedApplication].idleTimerDisabled = NO;
         });
     });
 }
@@ -108,9 +130,11 @@
     cover.tag = 1001;
     [superview addSubview:cover];
     
-    // 重新设计面板尺寸，紧凑布局
-    CGFloat panelW = screenBounds.size.width - 50;   // 左右留边
-    CGFloat panelH = 330;                             // 减小高度
+    AccountManager *mgr = [AccountManager shared];
+    
+    // 面板尺寸（根据内容自适应高度）
+    CGFloat panelW = screenBounds.size.width - 40;
+    CGFloat panelH = 420;   // 增加高度以容纳轮次名称和底部信息
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 30,
                                                               panelW, panelH)];
@@ -119,35 +143,32 @@
     panel.tag = 1002;
     [superview addSubview:panel];
     
-    AccountManager *mgr = [AccountManager shared];
-    
-    // 顶部标题
+    // 标题
     UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 12, panelW-30, 20)];
     titleLabel.text = @"账号与设置";
     titleLabel.font = [UIFont boldSystemFontOfSize:15];
     titleLabel.textColor = [UIColor blackColor];
     [panel addSubview:titleLabel];
     
-    // 账号输入框 (缩小高度)
-    UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(15, 35, panelW-30, 80)];
+    // 账号输入框
+    UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(15, 35, panelW-30, 75)];
     tv.layer.borderWidth = 0.5;
     tv.layer.borderColor = [UIColor colorWithWhite:0.8 alpha:1].CGColor;
     tv.layer.cornerRadius = 6;
-    tv.font = [UIFont systemFontOfSize:13];
+    tv.font = [UIFont systemFontOfSize:12];
     tv.tag = 1003;
     tv.text = [mgr exportAccountsText];
     [panel addSubview:tv];
     
-    // 设置区域开始 Y
-    CGFloat yPos = 125;
+    CGFloat yPos = 120;
+    CGFloat fieldW = (panelW - 50) / 2;   // 两个并排输入框宽度
     
-    // 一行两个输入框：粘贴延时 / 密码延时
-    CGFloat fieldW = (panelW - 40) / 2;
+    // 粘贴延时 / 密码延时（一行）
     UILabel *delayLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, 60, 20)];
     delayLabel.text = @"粘贴延时";
     delayLabel.font = [UIFont systemFontOfSize:12];
     [panel addSubview:delayLabel];
-    UITextField *delayTF = [[UITextField alloc] initWithFrame:CGRectMake(75, yPos, fieldW-30, 28)];
+    UITextField *delayTF = [[UITextField alloc] initWithFrame:CGRectMake(75, yPos-2, fieldW-30, 26)];
     delayTF.borderStyle = UITextBorderStyleRoundedRect;
     delayTF.font = [UIFont systemFontOfSize:13];
     delayTF.keyboardType = UIKeyboardTypeDecimalPad;
@@ -155,11 +176,11 @@
     delayTF.tag = 2000;
     [panel addSubview:delayTF];
     
-    UILabel *pwdLabel = [[UILabel alloc] initWithFrame:CGRectMake(15 + fieldW + 15, yPos, 60, 20)];
+    UILabel *pwdLabel = [[UILabel alloc] initWithFrame:CGRectMake(15 + fieldW + 10, yPos, 60, 20)];
     pwdLabel.text = @"密码延时";
     pwdLabel.font = [UIFont systemFontOfSize:12];
     [panel addSubview:pwdLabel];
-    UITextField *pwdDelayTF = [[UITextField alloc] initWithFrame:CGRectMake(75 + fieldW + 15, yPos, fieldW-30, 28)];
+    UITextField *pwdDelayTF = [[UITextField alloc] initWithFrame:CGRectMake(75 + fieldW + 10, yPos-2, fieldW-30, 26)];
     pwdDelayTF.borderStyle = UITextBorderStyleRoundedRect;
     pwdDelayTF.font = [UIFont systemFontOfSize:13];
     pwdDelayTF.keyboardType = UIKeyboardTypeDecimalPad;
@@ -167,9 +188,34 @@
     pwdDelayTF.tag = 2001;
     [panel addSubview:pwdDelayTF];
     
+    yPos += 36;
+    
+    // 轮次名称（一行两个）
+    UILabel *roundALabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, 50, 20)];
+    roundALabel.text = @"A轮名";
+    roundALabel.font = [UIFont systemFontOfSize:12];
+    [panel addSubview:roundALabel];
+    UITextField *roundATF = [[UITextField alloc] initWithFrame:CGRectMake(65, yPos-2, fieldW-10, 26)];
+    roundATF.borderStyle = UITextBorderStyleRoundedRect;
+    roundATF.font = [UIFont systemFontOfSize:13];
+    roundATF.text = mgr.roundAName;
+    roundATF.tag = 3000;
+    [panel addSubview:roundATF];
+    
+    UILabel *roundBLabel = [[UILabel alloc] initWithFrame:CGRectMake(15 + fieldW + 10, yPos, 50, 20)];
+    roundBLabel.text = @"B轮名";
+    roundBLabel.font = [UIFont systemFontOfSize:12];
+    [panel addSubview:roundBLabel];
+    UITextField *roundBTF = [[UITextField alloc] initWithFrame:CGRectMake(65 + fieldW + 10, yPos-2, fieldW-10, 26)];
+    roundBTF.borderStyle = UITextBorderStyleRoundedRect;
+    roundBTF.font = [UIFont systemFontOfSize:13];
+    roundBTF.text = mgr.roundBName;
+    roundBTF.tag = 3001;
+    [panel addSubview:roundBTF];
+    
     yPos += 38;
     
-    // 锁定开关 + 重置进度按钮 (同一行)
+    // 锁定开关 + 重置进度按钮
     UILabel *lockLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, 60, 20)];
     lockLabel.text = @"锁定图标";
     lockLabel.font = [UIFont systemFontOfSize:12];
@@ -188,15 +234,15 @@
     [resetBtn addTarget:self action:@selector(resetProgressAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:resetBtn];
     
-    yPos += 38;
+    yPos += 36;
     
-    // 底部分隔线
+    // 分隔线
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
     line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1];
     [panel addSubview:line];
-    yPos += 12;
+    yPos += 10;
     
-    // 底部按钮：保存 / 取消
+    // 底部按钮：取消 / 保存
     UIButton *cancelBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     cancelBtn.frame = CGRectMake(panelW/2 - 120, yPos, 100, 36);
     [cancelBtn setTitle:@"取消" forState:UIControlStateNormal];
@@ -216,8 +262,22 @@
     [saveBtn addTarget:self action:@selector(saveAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:saveBtn];
     
-    // 日志按钮行（单独一行，靠底部）
     yPos += 44;
+    
+    // 当前轮次信息（底部标签）
+    NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
+    fmt.dateFormat = @"HH:mm";
+    NSString *startTimeStr = [fmt stringFromDate:mgr.roundStartTime];
+    NSString *infoText = [NSString stringWithFormat:@"本次【%@】，启动时间：%@", [mgr currentRoundName], startTimeStr];
+    UILabel *infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 20)];
+    infoLabel.text = infoText;
+    infoLabel.font = [UIFont systemFontOfSize:11];
+    infoLabel.textColor = [UIColor grayColor];
+    infoLabel.tag = 4000;   // 方便后续更新
+    [panel addSubview:infoLabel];
+    yPos += 26;
+    
+    // 日志按钮（最底部）
     UIButton *copyLogBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     copyLogBtn.frame = CGRectMake(15, yPos, 90, 30);
     [copyLogBtn setTitle:@"复制日志" forState:UIControlStateNormal];
@@ -245,12 +305,12 @@
     NSString *newText = tv.text;
     NSString *originalText = [mgr exportAccountsText];
     
-    // 只有账号列表内容发生变化时才更新列表并重置进度
+    // 只有账号列表内容变化时才更新列表（内部重置进度和轮次）
     if (![newText isEqualToString:originalText]) {
-        [mgr updateAccountsWithText:newText];  // 内部会重置 currentIndex = 0
+        [mgr updateAccountsWithText:newText];
     }
     
-    // 读取延时配置
+    // 读取延时
     UITextField *delayTF = (UITextField *)[panel viewWithTag:2000];
     UITextField *pwdDelayTF = (UITextField *)[panel viewWithTag:2001];
     mgr.pasteDelay = [delayTF.text doubleValue];
@@ -261,6 +321,12 @@
     // 锁定状态
     UISwitch *lockSwitch = (UISwitch *)[panel viewWithTag:2002];
     mgr.floatLocked = lockSwitch.on;
+    
+    // 轮次名称
+    UITextField *roundATF = (UITextField *)[panel viewWithTag:3000];
+    UITextField *roundBTF = (UITextField *)[panel viewWithTag:3001];
+    if (roundATF.text.length > 0) mgr.roundAName = roundATF.text;
+    if (roundBTF.text.length > 0) mgr.roundBName = roundBTF.text;
     
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
