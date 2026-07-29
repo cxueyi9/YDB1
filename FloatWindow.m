@@ -2,8 +2,8 @@
 #import "AccountManager.h"
 
 @interface FloatView : UIView
-@property (nonatomic, weak) UILabel *roundLabel;  // 轮次名
-@property (nonatomic, weak) UILabel *badgeLabel;  // 进度数字
+@property (nonatomic, weak) UILabel *roundLabel;
+@property (nonatomic, weak) UILabel *badgeLabel;
 @property (nonatomic, assign) BOOL isEditing;
 @end
 
@@ -15,7 +15,6 @@
         self.layer.cornerRadius = frame.size.width / 2;
         self.clipsToBounds = YES;
         
-        // 轮次名（上方小字）
         UILabel *rLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 4, frame.size.width, 14)];
         rLabel.textAlignment = NSTextAlignmentCenter;
         rLabel.textColor = [UIColor whiteColor];
@@ -24,7 +23,6 @@
         [self addSubview:rLabel];
         _roundLabel = rLabel;
         
-        // 进度数字（下方）
         UILabel *badge = [[UILabel alloc] initWithFrame:CGRectMake(0, 18, frame.size.width, 28)];
         badge.textAlignment = NSTextAlignmentCenter;
         badge.textColor = [UIColor whiteColor];
@@ -71,7 +69,7 @@
     if (total == 0) return;
     
     [UIApplication sharedApplication].idleTimerDisabled = YES;
-    NSInteger displayIndex = mgr.currentIndex + 1;   // 本次填充的 1-based 序号
+    NSInteger displayIndex = mgr.currentIndex + 1;   // 1-based 当前填充序号
     
     if (mgr.needLogRoundStart && displayIndex == 1) {
         [mgr switchToNextRound];
@@ -87,16 +85,17 @@
     
     [FloatWindow showToast:[NSString stringWithFormat:@"%ld/%ld，账号 %@", (long)displayIndex, (long)total, account]];
     
+    // 索引递增（填充数量+1）
     mgr.currentIndex = (mgr.currentIndex + 1) % total;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     
-    // 判断一轮结束：填充后 currentIndex == 0 表示已填充总数
     if (mgr.currentIndex == 0) {
         [mgr finishRound];          // 记录结束时间
         mgr.needLogRoundStart = YES;
         if (mgr.autoLock) mgr.tapLocked = YES;
         [mgr saveToFile];
+        [[FloatWindow shared] updateBadge];   // ★ 关键：刷新显示，此时 roundEndTime 已设置
         
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((mgr.pasteDelay + mgr.passwordDelay + 2.0) * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
@@ -134,7 +133,7 @@
     
     AccountManager *mgr = [AccountManager shared];
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 480;  // 保持高度不变
+    CGFloat panelH = 480;
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -148,14 +147,14 @@
     title.text = @"账号与设置"; title.font = [UIFont boldSystemFontOfSize:15];
     [panel addSubview:title];
     
-    // 账号列表（高度增加到 120，约 10 行）
+    // 账号列表（高度 120）
     UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(15, 28, panelW-30, 120)];
     tv.layer.borderWidth = 0.5; tv.layer.borderColor = [UIColor colorWithWhite:0.8 alpha:1].CGColor;
     tv.layer.cornerRadius = 6; tv.font = [UIFont systemFontOfSize:13];
     tv.tag = 1003; tv.text = [mgr exportAccountsText];
     [panel addSubview:tv];
     
-    CGFloat yPos = 28 + 120 + 8; // 156
+    CGFloat yPos = 28 + 120 + 8;
     CGFloat leftMargin = 15;
     CGFloat comboWidth = (panelW - 2*leftMargin - 10) / 2;
     CGFloat labelWidth = 60, tfWidth = comboWidth - labelWidth - 5;
@@ -228,7 +227,7 @@
     [panel addSubview:saveBtn];
     yPos += 40;
     
-    // 轮次信息（进行中/已完成 + 结束时间）
+    // 轮次信息
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init]; fmt.dateFormat = @"HH:mm";
     BOOL isFinished = (mgr.currentIndex == 0 && mgr.accounts.count > 0 && mgr.roundEndTime != nil);
     NSString *status = isFinished ? @"已完成" : @"进行中";
@@ -242,7 +241,7 @@
     [panel addSubview:infoLabel];
     yPos += 22;
     
-    // 底部按钮行：复制日志(左) 导出并清空(中) 补上传(右)
+    // 底部按钮行
     UIButton *copyLogBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     copyLogBtn.frame = CGRectMake(15, yPos, 80, 28);
     [copyLogBtn setTitle:@"复制日志" forState:UIControlStateNormal]; copyLogBtn.titleLabel.font = [UIFont systemFontOfSize:12];
@@ -266,7 +265,7 @@
     [cover addGestureRecognizer:tapCover];
 }
 
-// ----- 辅助布局方法 -----
+// 辅助方法
 - (void)addLabel:(NSString *)text frameX:(CGFloat)x y:(CGFloat)y w:(CGFloat)w toPanel:(UIView *)panel {
     UILabel *lb = [[UILabel alloc] initWithFrame:CGRectMake(x, y, w, 20)];
     lb.text = text; lb.font = [UIFont systemFontOfSize:12];
@@ -285,7 +284,7 @@
     sw.on = on; sw.tag = tag; [panel addSubview:sw];
 }
 
-// ----- 跳转逻辑（修改后）-----
+// 跳转逻辑
 - (void)jumpAction:(UIButton *)sender {
     UIView *panel = [self.superview viewWithTag:1002];
     UITextField *jumpTF = (UITextField *)[panel viewWithTag:3002];
@@ -297,22 +296,21 @@
     if (targetLine < 1) targetLine = 1;
     if (targetLine > total) targetLine = total;
     
-    // 特殊处理：跳转到最后一行（总数），设为完成状态
+    // 特殊处理：跳转到最后一行设为完成状态
     if (targetLine == total) {
         mgr.currentIndex = 0;
         mgr.roundEndTime = [NSDate date];
         mgr.needLogRoundStart = YES;
     } else {
-        mgr.currentIndex = targetLine; // 直接设为 targetLine，显示时即为此数
-        mgr.roundEndTime = nil;        // 清除结束标记
-        mgr.needLogRoundStart = NO;    // 不需要记录开始
+        mgr.currentIndex = targetLine; // 直接设为 targetLine，显示 targetLine/total
+        mgr.roundEndTime = nil;
+        mgr.needLogRoundStart = NO;
     }
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     [FloatWindow showToast:[NSString stringWithFormat:@"已跳转到第 %ld 行", (long)targetLine]];
 }
 
-// ----- 保存设置 -----
 - (void)saveAction:(id)sender {
     UIView *panel = [self.superview viewWithTag:1002];
     UITextView *tv = (UITextView *)[panel viewWithTag:1003];
@@ -432,7 +430,6 @@
     NSInteger total = mgr.accounts.count;
     if (total > 0) {
         NSString *progressText;
-        // 显示已填充数量，若完成一轮则显示 total/total
         if (mgr.currentIndex == 0 && mgr.roundEndTime != nil) {
             progressText = [NSString stringWithFormat:@"%ld/%ld", (long)total, (long)total];
         } else {
