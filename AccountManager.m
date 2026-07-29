@@ -26,13 +26,14 @@
         self.pasteDelay = 1.0;
         self.passwordDelay = 0.5;
         self.floatLocked = NO;
-        self.tapLocked = NO;   // 新增
+        self.tapLocked = NO;
         self.autoLock = NO;
 
         self.currentRound = 0;
         self.roundAName = @"A轮";
         self.roundBName = @"B轮";
         self.roundStartTime = [NSDate date];
+        self.roundEndTime = nil;
         self.needLogRoundStart = YES;
 
         self.serverURL = @"http://你的服务器地址:5000/upload";
@@ -41,18 +42,20 @@
     return self;
 }
 
-- (NSArray<NSDictionary *> *)accounts {
-    return [_accounts copy];
-}
+- (NSArray<NSDictionary *> *)accounts { return [_accounts copy]; }
 
-- (NSString *)currentRoundName {
-    return (self.currentRound == 0) ? self.roundAName : self.roundBName;
-}
+- (NSString *)currentRoundName { return (self.currentRound == 0) ? self.roundAName : self.roundBName; }
 
 - (void)switchToNextRound {
     self.currentRound = 1 - self.currentRound;
     self.roundStartTime = [NSDate date];
+    self.roundEndTime = nil;
     self.needLogRoundStart = YES;
+    [self saveToFile];
+}
+
+- (void)finishRound {
+    self.roundEndTime = [NSDate date];
     [self saveToFile];
 }
 
@@ -80,8 +83,9 @@
     self.currentIndex = 0;
     self.currentRound = 0;
     self.roundStartTime = [NSDate date];
+    self.roundEndTime = nil;
     self.needLogRoundStart = YES;
-    self.tapLocked = NO;   // 重置时解除锁定点击
+    self.tapLocked = NO;
     [self saveToFile];
 }
 
@@ -98,6 +102,7 @@
     self.currentIndex = 0;
     self.currentRound = 0;
     self.roundStartTime = [NSDate date];
+    self.roundEndTime = nil;
     self.needLogRoundStart = YES;
     self.tapLocked = NO;
     [self saveToFile];
@@ -112,8 +117,7 @@
 - (void)recordLogRoundStart {
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"yyyy/M/d HH:mm";
-    NSString *timeStr = [fmt stringFromDate:[NSDate date]];
-    NSString *line = [NSString stringWithFormat:@"%@ 开始, %@\n", [self currentRoundName], timeStr];
+    NSString *line = [NSString stringWithFormat:@"%@ 开始, %@\n", [self currentRoundName], [fmt stringFromDate:[NSDate date]]];
     NSString *path = [self logFilePath];
     NSFileManager *fm = [NSFileManager defaultManager];
     if (![fm fileExistsAtPath:path]) {
@@ -129,8 +133,7 @@
 - (void)recordLogWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account {
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"yyyy/M/d HH:mm";
-    NSString *timeStr = [fmt stringFromDate:[NSDate date]];
-    NSString *line = [NSString stringWithFormat:@"%ld/%ld, %@, %@\n", (long)index, (long)total, timeStr, account];
+    NSString *line = [NSString stringWithFormat:@"%ld/%ld, %@, %@\n", (long)index, (long)total, [fmt stringFromDate:[NSDate date]], account];
     NSString *path = [self logFilePath];
     NSFileManager *fm = [NSFileManager defaultManager];
     if (![fm fileExistsAtPath:path]) {
@@ -151,19 +154,17 @@
     [[NSFileManager defaultManager] removeItemAtPath:[self logFilePath] error:nil];
 }
 
-#pragma mark - 本轮记录（上传用）
+#pragma mark - 本轮记录/上传
 - (void)addRoundRecordWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account {
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"yyyy/M/d HH:mm";
-    NSString *timeStr = [fmt stringFromDate:[NSDate date]];
-    NSDictionary *record = @{
+    [self.currentRoundRecords addObject:@{
         @"index": @(index),
         @"total": @(total),
         @"account": account ?: @"",
-        @"time": timeStr,
+        @"time": [fmt stringFromDate:[NSDate date]],
         @"device": [self deviceIdentifier]
-    };
-    [self.currentRoundRecords addObject:record];
+    }];
 }
 
 - (void)uploadRoundRecordsWithCompletion:(void(^)(BOOL success, NSString *msg))completion {
@@ -216,23 +217,18 @@
     req.HTTPBody = jsonData;
 
     NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        if (error) {
-            dispatch_async(dispatch_get_main_queue(), ^{
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (error) {
                 if (completion) completion(NO, error.localizedDescription);
-            });
-            return;
-        }
-        NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
-        if (httpResp.statusCode == 200) {
-            dispatch_async(dispatch_get_main_queue(), ^{
+                return;
+            }
+            NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
+            if (httpResp.statusCode == 200) {
                 if (completion) completion(YES, @"上传成功");
-            });
-        } else {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                NSString *msg = [NSString stringWithFormat:@"服务器返回状态码: %ld", (long)httpResp.statusCode];
-                if (completion) completion(NO, msg);
-            });
-        }
+            } else {
+                if (completion) completion(NO, [NSString stringWithFormat:@"服务器状态码 %ld", (long)httpResp.statusCode]);
+            }
+        });
     }];
     [task resume];
 }
@@ -261,7 +257,6 @@
     if (!identifier) {
         identifier = [[NSUUID UUID] UUIDString];
         [ud setObject:identifier forKey:key];
-        [ud synchronize];
     }
     return identifier;
 }
@@ -274,9 +269,7 @@
 
 - (void)saveToFile {
     NSMutableArray *arr = [NSMutableArray array];
-    for (NSDictionary *d in _accounts) {
-        [arr addObject:d];
-    }
+    for (NSDictionary *d in _accounts) [arr addObject:d];
     NSDictionary *data = @{
         @"accounts": arr,
         @"currentIndex": @(self.currentIndex),
@@ -290,6 +283,7 @@
         @"roundAName": self.roundAName ?: @"A轮",
         @"roundBName": self.roundBName ?: @"B轮",
         @"roundStartTime": self.roundStartTime ?: [NSDate date],
+        @"roundEndTime": self.roundEndTime ?: [NSNull null],
         @"needLogRoundStart": @(self.needLogRoundStart),
         @"serverURL": self.serverURL ?: @""
     };
@@ -299,30 +293,24 @@
 - (void)loadFromFile {
     NSDictionary *data = [NSDictionary dictionaryWithContentsOfFile:[self dataFilePath]];
     if (data) {
-        NSArray *arr = data[@"accounts"];
-        if (arr) _accounts = [arr mutableCopy];
-        NSNumber *idx = data[@"currentIndex"];
-        self.currentIndex = idx ? [idx integerValue] : 0;
-        NSString *fp = data[@"floatWindowPoint"];
-        if (fp) self.floatWindowPoint = CGPointFromString(fp);
-        NSNumber *pd = data[@"pasteDelay"];
-        if (pd) self.pasteDelay = [pd doubleValue];
-        NSNumber *pwd = data[@"passwordDelay"];
-        if (pwd) self.passwordDelay = [pwd doubleValue];
-        NSNumber *locked = data[@"floatLocked"];
-        self.floatLocked = locked ? [locked boolValue] : NO;
-        NSNumber *tapLock = data[@"tapLocked"];
-        self.tapLocked = tapLock ? [tapLock boolValue] : NO;
-        NSNumber *autoL = data[@"autoLock"];
-        self.autoLock = autoL ? [autoL boolValue] : NO;
+        NSArray *arr = data[@"accounts"]; if (arr) _accounts = [arr mutableCopy];
+        NSNumber *idx = data[@"currentIndex"]; self.currentIndex = idx ? [idx integerValue] : 0;
+        NSString *fp = data[@"floatWindowPoint"]; if (fp) self.floatWindowPoint = CGPointFromString(fp);
+        NSNumber *pd = data[@"pasteDelay"]; if (pd) self.pasteDelay = [pd doubleValue];
+        NSNumber *pwd = data[@"passwordDelay"]; if (pwd) self.passwordDelay = [pwd doubleValue];
+        NSNumber *locked = data[@"floatLocked"]; self.floatLocked = locked ? [locked boolValue] : NO;
+        NSNumber *tapLock = data[@"tapLocked"]; self.tapLocked = tapLock ? [tapLock boolValue] : NO;
+        NSNumber *autoL = data[@"autoLock"]; self.autoLock = autoL ? [autoL boolValue] : NO;
 
-        NSNumber *round = data[@"currentRound"];
-        self.currentRound = round ? [round integerValue] : 0;
+        NSNumber *round = data[@"currentRound"]; self.currentRound = round ? [round integerValue] : 0;
         self.roundAName = data[@"roundAName"] ?: @"A轮";
         self.roundBName = data[@"roundBName"] ?: @"B轮";
         self.roundStartTime = data[@"roundStartTime"] ?: [NSDate date];
-        NSNumber *needLog = data[@"needLogRoundStart"];
-        self.needLogRoundStart = needLog ? [needLog boolValue] : YES;
+        id endTimeObj = data[@"roundEndTime"];
+        if ([endTimeObj isKindOfClass:[NSDate class]]) self.roundEndTime = endTimeObj;
+        else self.roundEndTime = nil;
+
+        NSNumber *needLog = data[@"needLogRoundStart"]; self.needLogRoundStart = needLog ? [needLog boolValue] : YES;
         self.serverURL = data[@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
     }
     self.currentRoundRecords = [NSMutableArray array];

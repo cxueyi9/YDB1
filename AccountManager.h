@@ -6,51 +6,45 @@
 + (instancetype)shared;
 
 @property (nonatomic, strong, readonly) NSArray<NSDictionary *> *accounts;
-@property (nonatomic, assign) NSInteger currentIndex;          // 已填充数量
+@property (nonatomic, assign) NSInteger currentIndex;
 
-// 浮窗位置
 @property (nonatomic, assign) CGPoint floatWindowPoint;
-// 粘贴前等待时间（秒）
 @property (nonatomic, assign) NSTimeInterval pasteDelay;
-// 密码粘贴等待时间（秒）
 @property (nonatomic, assign) NSTimeInterval passwordDelay;
-// 是否锁定图标（禁止拖拽）
-@property (nonatomic, assign) BOOL floatLocked;
-// 是否锁定点击（禁止填充）
-@property (nonatomic, assign) BOOL tapLocked;
-// 是否开启自动锁定（每轮结束后自动开启 tapLocked）
-@property (nonatomic, assign) BOOL autoLock;
+@property (nonatomic, assign) BOOL floatLocked;      // 锁定图标拖拽
+@property (nonatomic, assign) BOOL tapLocked;        // 锁定点击填充
+@property (nonatomic, assign) BOOL autoLock;         // 自动锁定点击
 
-// 轮次管理
-@property (nonatomic, assign) NSInteger currentRound;          // 0 或 1
+@property (nonatomic, assign) NSInteger currentRound;
 @property (nonatomic, copy) NSString *roundAName;
 @property (nonatomic, copy) NSString *roundBName;
 @property (nonatomic, strong) NSDate *roundStartTime;
-@property (nonatomic, assign) BOOL needLogRoundStart;          // 是否需要记录轮次开始
+@property (nonatomic, strong) NSDate *roundEndTime;  // 新增
+@property (nonatomic, assign) BOOL needLogRoundStart;
 
-// 服务器上传
 @property (nonatomic, copy) NSString *serverURL;
 @property (nonatomic, strong, readonly) NSMutableArray<NSDictionary *> *currentRoundRecords;
 
 - (NSString *)currentRoundName;
 - (void)switchToNextRound;
+- (void)finishRound;                                 // 新增：记录结束时间
 
 - (NSDictionary *)nextAccount;
 - (void)updateAccountsWithText:(NSString *)text;
 - (NSString *)exportAccountsText;
 
-// 本地日志文件
+// 本地日志
 - (void)recordLogWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account;
 - (void)recordLogRoundStart;
 - (NSString *)logFilePath;
 - (NSString *)readLogContent;
 - (void)clearLog;
 
-// 本轮记录（用于上传）
+// 本轮记录/上传
 - (void)addRoundRecordWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account;
 - (void)uploadRoundRecordsWithCompletion:(void(^)(BOOL success, NSString *msg))completion;
 
-// 暂存记录管理
+// 暂存管理
 - (NSArray<NSDictionary *> *)loadStagedRecords;
 - (void)saveStagedRecords:(NSArray<NSDictionary *> *)records;
 - (void)clearStagedRecords;
