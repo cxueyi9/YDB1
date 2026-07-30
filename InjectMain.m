@@ -18,8 +18,8 @@ static void onLoad(void) {
             });
         }];
 
-        // 进入后台时强制保存当前状态，防止被杀后丢失
-        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidEnterBackgroundNotification
+        // 应用即将非活跃时（进入后台/锁屏等）强制保存，防止被杀后丢失
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillResignActiveNotification
                                                           object:nil
                                                            queue:[NSOperationQueue mainQueue]
                                                       usingBlock:^(NSNotification *note) {

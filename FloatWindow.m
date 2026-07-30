@@ -72,7 +72,7 @@
     NSInteger displayIndex = mgr.currentIndex + 1;
     
     if (mgr.needLogRoundStart && displayIndex == 1) {
-        [mgr switchToNextRound];
+        [mgr switchToNextRound];          // 内部已 saveToFile
         [mgr recordLogRoundStart];
         mgr.needLogRoundStart = NO;
         [mgr saveToFile];
@@ -141,12 +141,10 @@
     panel.tag = 1002;
     [superview addSubview:panel];
     
-    // 标题
     UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(15, 8, panelW-30, 18)];
     title.text = @"账号与设置"; title.font = [UIFont boldSystemFontOfSize:15];
     [panel addSubview:title];
     
-    // 账号列表（高度 120）
     UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(15, 28, panelW-30, 120)];
     tv.layer.borderWidth = 0.5; tv.layer.borderColor = [UIColor colorWithWhite:0.8 alpha:1].CGColor;
     tv.layer.cornerRadius = 6; tv.font = [UIFont systemFontOfSize:13];
@@ -159,33 +157,28 @@
     CGFloat labelWidth = 60, tfWidth = comboWidth - labelWidth - 5;
     CGFloat secondColX = leftMargin + comboWidth + 10;
     
-    // 粘贴延时 / 密码延时
     [self addLabel:@"粘贴延时" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
     [self addTextField:2000 value:[NSString stringWithFormat:@"%.1f", mgr.pasteDelay] frameX:leftMargin+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
     [self addLabel:@"密码延时" frameX:secondColX y:yPos w:labelWidth toPanel:panel];
     [self addTextField:2001 value:[NSString stringWithFormat:@"%.1f", mgr.passwordDelay] frameX:secondColX+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
     yPos += 32;
     
-    // A轮名 / B轮名
     [self addLabel:@"A轮名" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
     [self addTextField:3000 value:mgr.roundAName frameX:leftMargin+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
     [self addLabel:@"B轮名" frameX:secondColX y:yPos w:labelWidth toPanel:panel];
     [self addTextField:3001 value:mgr.roundBName frameX:secondColX+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
     yPos += 34;
     
-    // 服务器地址
     [self addLabel:@"服务器地址" frameX:leftMargin y:yPos w:70 toPanel:panel];
     [self addTextField:3003 value:mgr.serverURL frameX:leftMargin+75 y:yPos-2 w:panelW-120 toPanel:panel];
     yPos += 34;
     
-    // 锁定图标 / 锁定点击
     [self addLabel:@"锁定图标" frameX:leftMargin y:yPos w:65 toPanel:panel];
     [self addSwitch:2002 on:mgr.floatLocked frameX:leftMargin+70 y:yPos-5 toPanel:panel];
     [self addLabel:@"锁定点击" frameX:secondColX y:yPos w:65 toPanel:panel];
     [self addSwitch:2005 on:mgr.tapLocked frameX:secondColX+70 y:yPos-5 toPanel:panel];
     yPos += 36;
     
-    // 自动锁定 / 跳转到
     [self addLabel:@"自动锁定" frameX:leftMargin y:yPos w:80 toPanel:panel];
     [self addSwitch:2004 on:mgr.autoLock frameX:leftMargin+85 y:yPos-5 toPanel:panel];
     UILabel *jumpLabel = [[UILabel alloc] initWithFrame:CGRectMake(secondColX, yPos, 45, 20)];
@@ -204,12 +197,10 @@
     [panel addSubview:goBtn];
     yPos += 36;
     
-    // 分隔线
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
     line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
     yPos += 8;
     
-    // 保存/取消
     UIButton *cancelBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     cancelBtn.frame = CGRectMake(panelW/2-110, yPos, 95, 32);
     [cancelBtn setTitle:@"取消" forState:UIControlStateNormal]; cancelBtn.titleLabel.font = [UIFont systemFontOfSize:14];
@@ -226,7 +217,6 @@
     [panel addSubview:saveBtn];
     yPos += 40;
     
-    // 轮次信息
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init]; fmt.dateFormat = @"HH:mm";
     BOOL isFinished = (mgr.currentIndex == 0 && mgr.accounts.count > 0 && mgr.roundEndTime != nil);
     NSString *status = isFinished ? @"已完成" : @"进行中";
@@ -240,7 +230,6 @@
     [panel addSubview:infoLabel];
     yPos += 22;
     
-    // 底部按钮行
     UIButton *copyLogBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     copyLogBtn.frame = CGRectMake(15, yPos, 80, 28);
     [copyLogBtn setTitle:@"复制日志" forState:UIControlStateNormal]; copyLogBtn.titleLabel.font = [UIFont systemFontOfSize:12];
@@ -264,7 +253,6 @@
     [cover addGestureRecognizer:tapCover];
 }
 
-// 辅助布局方法
 - (void)addLabel:(NSString *)text frameX:(CGFloat)x y:(CGFloat)y w:(CGFloat)w toPanel:(UIView *)panel {
     UILabel *lb = [[UILabel alloc] initWithFrame:CGRectMake(x, y, w, 20)];
     lb.text = text; lb.font = [UIFont systemFontOfSize:12];
@@ -283,7 +271,6 @@
     sw.on = on; sw.tag = tag; [panel addSubview:sw];
 }
 
-// 跳转逻辑
 - (void)jumpAction:(UIButton *)sender {
     UIView *panel = [self.superview viewWithTag:1002];
     UITextField *jumpTF = (UITextField *)[panel viewWithTag:3002];
@@ -404,12 +391,20 @@
         [self.rootViewController.view addSubview:_floatView];
         [self updateBadge];
 
-        // 从后台回到前台时刷新悬浮窗显示
+        // 从后台回到前台时刷新悬浮窗
         [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillEnterForegroundNotification
                                                           object:nil
                                                            queue:[NSOperationQueue mainQueue]
                                                       usingBlock:^(NSNotification *note) {
             [self updateBadge];
+        }];
+
+        // 再注册一个即将非活跃的通知，确保进入后台时保存
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillResignActiveNotification
+                                                          object:nil
+                                                           queue:[NSOperationQueue mainQueue]
+                                                      usingBlock:^(NSNotification *note) {
+            [[AccountManager shared] saveToFile];
         }];
     }
     return self;
