@@ -108,7 +108,7 @@
     [self saveToFile];
 }
 
-#pragma mark - 本地日志
+#pragma mark - 本地日志（保持不变）
 - (NSString *)logFilePath {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     return [paths.firstObject stringByAppendingPathComponent:@"fill_log.txt"];
@@ -154,7 +154,7 @@
     [[NSFileManager defaultManager] removeItemAtPath:[self logFilePath] error:nil];
 }
 
-#pragma mark - 本轮记录/上传
+#pragma mark - 本轮记录/上传（不变）
 - (void)addRoundRecordWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account {
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"yyyy/M/d HH:mm";
@@ -233,7 +233,7 @@
     [task resume];
 }
 
-#pragma mark - 暂存记录
+#pragma mark - 暂存记录（不变）
 - (NSString *)stagedFilePath {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     return [paths.firstObject stringByAppendingPathComponent:@"staged_records.plist"];
@@ -261,13 +261,35 @@
     return identifier;
 }
 
-#pragma mark - 持久化
+#pragma mark - 持久化（改造：核心状态使用 NSUserDefaults）
+
 - (NSString *)dataFilePath {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     return [paths.firstObject stringByAppendingPathComponent:@"com.youdaibao.config.plist"];
 }
 
 - (void)saveToFile {
+    // 1. 保存核心进度到 NSUserDefaults（强制写入，不怕被杀）
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    [ud setInteger:self.currentIndex forKey:@"currentIndex"];
+    [ud setInteger:self.currentRound forKey:@"currentRound"];
+    [ud setBool:self.needLogRoundStart forKey:@"needLogRoundStart"];
+    [ud setBool:self.tapLocked forKey:@"tapLocked"];
+    [ud setBool:self.autoLock forKey:@"autoLock"];
+    [ud setBool:self.floatLocked forKey:@"floatLocked"];
+    [ud setDouble:self.pasteDelay forKey:@"pasteDelay"];
+    [ud setDouble:self.passwordDelay forKey:@"passwordDelay"];
+    [ud setObject:self.roundAName ?: @"A轮" forKey:@"roundAName"];
+    [ud setObject:self.roundBName ?: @"B轮" forKey:@"roundBName"];
+    [ud setObject:self.serverURL ?: @"" forKey:@"serverURL"];
+    if (self.roundStartTime) [ud setObject:self.roundStartTime forKey:@"roundStartTime"];
+    else [ud removeObjectForKey:@"roundStartTime"];
+    if (self.roundEndTime) [ud setObject:self.roundEndTime forKey:@"roundEndTime"];
+    else [ud removeObjectForKey:@"roundEndTime"];
+    [ud setObject:NSStringFromCGPoint(self.floatWindowPoint) forKey:@"floatWindowPoint"];
+    [ud synchronize];  // 立即同步
+
+    // 2. 同时保存账号列表到 plist（以便完整备份）
     NSMutableArray *arr = [NSMutableArray array];
     for (NSDictionary *d in _accounts) [arr addObject:d];
     NSDictionary *data = @{
@@ -291,28 +313,58 @@
 }
 
 - (void)loadFromFile {
-    NSDictionary *data = [NSDictionary dictionaryWithContentsOfFile:[self dataFilePath]];
-    if (data) {
-        NSArray *arr = data[@"accounts"]; if (arr) _accounts = [arr mutableCopy];
-        NSNumber *idx = data[@"currentIndex"]; self.currentIndex = idx ? [idx integerValue] : 0;
-        NSString *fp = data[@"floatWindowPoint"]; if (fp) self.floatWindowPoint = CGPointFromString(fp);
-        NSNumber *pd = data[@"pasteDelay"]; if (pd) self.pasteDelay = [pd doubleValue];
-        NSNumber *pwd = data[@"passwordDelay"]; if (pwd) self.passwordDelay = [pwd doubleValue];
-        NSNumber *locked = data[@"floatLocked"]; self.floatLocked = locked ? [locked boolValue] : NO;
-        NSNumber *tapLock = data[@"tapLocked"]; self.tapLocked = tapLock ? [tapLock boolValue] : NO;
-        NSNumber *autoL = data[@"autoLock"]; self.autoLock = autoL ? [autoL boolValue] : NO;
-
-        NSNumber *round = data[@"currentRound"]; self.currentRound = round ? [round integerValue] : 0;
-        self.roundAName = data[@"roundAName"] ?: @"A轮";
-        self.roundBName = data[@"roundBName"] ?: @"B轮";
-        self.roundStartTime = data[@"roundStartTime"] ?: [NSDate date];
-        id endTimeObj = data[@"roundEndTime"];
-        if ([endTimeObj isKindOfClass:[NSDate class]]) self.roundEndTime = endTimeObj;
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    // 优先从 NSUserDefaults 恢复核心状态（即使应用被杀死也能保证最新）
+    if ([ud objectForKey:@"currentIndex"] != nil) {
+        self.currentIndex = [ud integerForKey:@"currentIndex"];
+        self.currentRound = [ud integerForKey:@"currentRound"];
+        self.needLogRoundStart = [ud boolForKey:@"needLogRoundStart"];
+        self.tapLocked = [ud boolForKey:@"tapLocked"];
+        self.autoLock = [ud boolForKey:@"autoLock"];
+        self.floatLocked = [ud boolForKey:@"floatLocked"];
+        self.pasteDelay = [ud doubleForKey:@"pasteDelay"];
+        self.passwordDelay = [ud doubleForKey:@"passwordDelay"];
+        self.roundAName = [ud stringForKey:@"roundAName"] ?: @"A轮";
+        self.roundBName = [ud stringForKey:@"roundBName"] ?: @"B轮";
+        self.serverURL = [ud stringForKey:@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
+        if ([ud objectForKey:@"roundStartTime"]) self.roundStartTime = [ud objectForKey:@"roundStartTime"];
+        else self.roundStartTime = [NSDate date];
+        if ([ud objectForKey:@"roundEndTime"]) self.roundEndTime = [ud objectForKey:@"roundEndTime"];
         else self.roundEndTime = nil;
-
-        NSNumber *needLog = data[@"needLogRoundStart"]; self.needLogRoundStart = needLog ? [needLog boolValue] : YES;
-        self.serverURL = data[@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
+        NSString *fpStr = [ud stringForKey:@"floatWindowPoint"];
+        if (fpStr) self.floatWindowPoint = CGPointFromString(fpStr);
+    } else {
+        // 若 NSUserDefaults 中没有，从 plist 读取（兼容旧版数据）
+        NSDictionary *data = [NSDictionary dictionaryWithContentsOfFile:[self dataFilePath]];
+        if (data) {
+            self.currentIndex = [data[@"currentIndex"] integerValue];
+            self.currentRound = [data[@"currentRound"] integerValue];
+            self.needLogRoundStart = [data[@"needLogRoundStart"] boolValue];
+            self.tapLocked = [data[@"tapLocked"] boolValue];
+            self.autoLock = [data[@"autoLock"] boolValue];
+            self.floatLocked = [data[@"floatLocked"] boolValue];
+            self.pasteDelay = [data[@"pasteDelay"] doubleValue];
+            self.passwordDelay = [data[@"passwordDelay"] doubleValue];
+            self.roundAName = data[@"roundAName"] ?: @"A轮";
+            self.roundBName = data[@"roundBName"] ?: @"B轮";
+            self.serverURL = data[@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
+            if ([data[@"roundStartTime"] isKindOfClass:[NSDate class]]) self.roundStartTime = data[@"roundStartTime"];
+            else self.roundStartTime = [NSDate date];
+            if ([data[@"roundEndTime"] isKindOfClass:[NSDate class]]) self.roundEndTime = data[@"roundEndTime"];
+            else self.roundEndTime = nil;
+            NSString *fp = data[@"floatWindowPoint"];
+            if (fp) self.floatWindowPoint = CGPointFromString(fp);
+        }
     }
+    
+    // 继续从 plist 中读取账号列表（文件方式存储可避免 NSUserDefaults 容量限制）
+    NSDictionary *data = [NSDictionary dictionaryWithContentsOfFile:[self dataFilePath]];
+    NSArray *arr = data[@"accounts"];
+    if (arr) {
+        _accounts = [arr mutableCopy];
+    }
+    
+    // 初始化内存中的记录数组
     self.currentRoundRecords = [NSMutableArray array];
 }
 
