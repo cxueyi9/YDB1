@@ -1,21 +1,29 @@
 #import <UIKit/UIKit.h>
 #import "FloatWindow.h"
+#import "AccountManager.h"
 
 __attribute__((constructor))
 static void onLoad(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        // 等待 App 完全活跃后再创建浮窗，兼容 iOS 13+ 和传统 AppDelegate
+        // 应用完全启动后创建浮窗
         [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
                                                           object:nil
                                                            queue:[NSOperationQueue mainQueue]
                                                       usingBlock:^(NSNotification *note) {
             static dispatch_once_t onceToken;
             dispatch_once(&onceToken, ^{
-                // 再延迟 0.5 秒，确保界面完全加载
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                     [FloatWindow shared];
                 });
             });
+        }];
+
+        // 进入后台时强制保存当前状态，防止被杀后丢失
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidEnterBackgroundNotification
+                                                          object:nil
+                                                           queue:[NSOperationQueue mainQueue]
+                                                      usingBlock:^(NSNotification *note) {
+            [[AccountManager shared] saveToFile];
         }];
     });
 }

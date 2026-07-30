@@ -69,7 +69,7 @@
     if (total == 0) return;
     
     [UIApplication sharedApplication].idleTimerDisabled = YES;
-    NSInteger displayIndex = mgr.currentIndex + 1;   // 1-based 当前填充序号
+    NSInteger displayIndex = mgr.currentIndex + 1;
     
     if (mgr.needLogRoundStart && displayIndex == 1) {
         [mgr switchToNextRound];
@@ -85,17 +85,16 @@
     
     [FloatWindow showToast:[NSString stringWithFormat:@"%ld/%ld，账号 %@", (long)displayIndex, (long)total, account]];
     
-    // 索引递增（填充数量+1）
     mgr.currentIndex = (mgr.currentIndex + 1) % total;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     
     if (mgr.currentIndex == 0) {
-        [mgr finishRound];          // 记录结束时间
+        [mgr finishRound];
         mgr.needLogRoundStart = YES;
         if (mgr.autoLock) mgr.tapLocked = YES;
         [mgr saveToFile];
-        [[FloatWindow shared] updateBadge];   // ★ 关键：刷新显示，此时 roundEndTime 已设置
+        [[FloatWindow shared] updateBadge];
         
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((mgr.pasteDelay + mgr.passwordDelay + 2.0) * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
@@ -265,7 +264,7 @@
     [cover addGestureRecognizer:tapCover];
 }
 
-// 辅助方法
+// 辅助布局方法
 - (void)addLabel:(NSString *)text frameX:(CGFloat)x y:(CGFloat)y w:(CGFloat)w toPanel:(UIView *)panel {
     UILabel *lb = [[UILabel alloc] initWithFrame:CGRectMake(x, y, w, 20)];
     lb.text = text; lb.font = [UIFont systemFontOfSize:12];
@@ -296,13 +295,12 @@
     if (targetLine < 1) targetLine = 1;
     if (targetLine > total) targetLine = total;
     
-    // 特殊处理：跳转到最后一行设为完成状态
     if (targetLine == total) {
         mgr.currentIndex = 0;
         mgr.roundEndTime = [NSDate date];
         mgr.needLogRoundStart = YES;
     } else {
-        mgr.currentIndex = targetLine; // 直接设为 targetLine，显示 targetLine/total
+        mgr.currentIndex = targetLine;
         mgr.roundEndTime = nil;
         mgr.needLogRoundStart = NO;
     }
@@ -405,6 +403,14 @@
         _floatView = [[FloatView alloc] initWithFrame:CGRectMake(mgr.floatWindowPoint.x, mgr.floatWindowPoint.y, 50, 50)];
         [self.rootViewController.view addSubview:_floatView];
         [self updateBadge];
+
+        // 从后台回到前台时刷新悬浮窗显示
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillEnterForegroundNotification
+                                                          object:nil
+                                                           queue:[NSOperationQueue mainQueue]
+                                                      usingBlock:^(NSNotification *note) {
+            [self updateBadge];
+        }];
     }
     return self;
 }
