@@ -76,11 +76,30 @@
         NSString *trimmed = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         if (trimmed.length == 0) continue;
         NSArray *parts = [trimmed componentsSeparatedByString:@":"];
-        if (parts.count == 3) {
-            [_accounts addObject:@{@"account": parts[1], @"password": parts[2]}];
-        } else if (parts.count == 2) {
-            [_accounts addObject:@{@"account": parts[0], @"password": parts[1]}];
+        if (parts.count < 3) continue; // 至少需要 序号:账号:密码
+        
+        NSString *account = parts[1];
+        NSString *password = parts[2];
+        if (account.length == 0) continue;
+        
+        NSString *fakedID = nil;
+        if (parts.count >= 4 && [parts[3] length] > 0) {
+            fakedID = parts[3];
+        } else {
+            fakedID = [self generateFakedIDForAccount:account];
         }
+        
+        NSString *fakedName = @"iPhone";
+        if (parts.count >= 5 && [parts[4] length] > 0) {
+            fakedName = parts[4];
+        }
+        
+        [_accounts addObject:@{
+            @"account": account,
+            @"password": password,
+            @"fakedID": fakedID,
+            @"fakedName": fakedName
+        }];
     }
     self.currentIndex = 0;
     self.currentRound = 0;
@@ -96,7 +115,10 @@
     NSMutableString *text = [NSMutableString string];
     for (NSInteger i = 0; i < _accounts.count; i++) {
         NSDictionary *acc = _accounts[i];
-        [text appendFormat:@"%ld:%@:%@\n", (long)(i+1), acc[@"account"], acc[@"password"]];
+        NSString *fakedID = acc[@"fakedID"] ?: @"";
+        NSString *fakedName = acc[@"fakedName"] ?: @"iPhone";
+        [text appendFormat:@"%ld:%@:%@:%@:%@\n", (long)(i+1),
+         acc[@"account"], acc[@"password"], fakedID, fakedName];
     }
     return text;
 }
@@ -114,19 +136,45 @@
 
 #pragma mark - 伪装标识生成
 
-- (NSString *)fakedDeviceIdentifierForAccount:(NSString *)account {
+- (NSString *)generateFakedIDForAccount:(NSString *)account {
     if (!account || account.length == 0) return @"00000000-0000-0000-0000-000000000000";
-    
     NSData *data = [account dataUsingEncoding:NSUTF8StringEncoding];
     uint8_t digest[CC_SHA256_DIGEST_LENGTH];
     CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
-    
     NSMutableString *output = [NSMutableString stringWithCapacity:36];
     for (int i = 0; i < 16; i++) {
         if (i == 4 || i == 6 || i == 8 || i == 10) [output appendString:@"-"];
         [output appendFormat:@"%02x", digest[i]];
     }
     return [output uppercaseString];
+}
+
+- (NSString *)fakedDeviceIdentifierForAccount:(NSString *)account {
+    // 直接遍历查找
+    for (NSDictionary *acc in _accounts) {
+        if ([acc[@"account"] isEqualToString:account]) {
+            return acc[@"fakedID"] ?: [self generateFakedIDForAccount:account];
+        }
+    }
+    return [self generateFakedIDForAccount:account];
+}
+
+- (NSString *)currentFakedID {
+    for (NSDictionary *acc in _accounts) {
+        if ([acc[@"account"] isEqualToString:self.currentAccount]) {
+            return acc[@"fakedID"] ?: @"00000000-0000-0000-0000-000000000001";
+        }
+    }
+    return @"00000000-0000-0000-0000-000000000001";
+}
+
+- (NSString *)currentFakedName {
+    for (NSDictionary *acc in _accounts) {
+        if ([acc[@"account"] isEqualToString:self.currentAccount]) {
+            return acc[@"fakedName"] ?: @"iPhone";
+        }
+    }
+    return @"iPhone";
 }
 
 #pragma mark - 本地日志
@@ -387,7 +435,27 @@
     
     NSDictionary *data = [NSDictionary dictionaryWithContentsOfFile:[self dataFilePath]];
     NSArray *arr = data[@"accounts"];
-    if (arr) _accounts = [arr mutableCopy];
+    if (arr) {
+        _accounts = [arr mutableCopy];
+        // 兼容旧数据：若缺失 fakedID/fakedName，自动生成并保存
+        BOOL modified = NO;
+        for (NSMutableDictionary *acc in _accounts) {
+            if (!acc[@"fakedID"]) {
+                NSString *genID = [self generateFakedIDForAccount:acc[@"account"]];
+                acc[@"fakedID"] = genID;
+                modified = YES;
+            }
+            if (!acc[@"fakedName"]) {
+                acc[@"fakedName"] = @"iPhone";
+                modified = YES;
+            }
+        }
+        if (modified) {
+            [self saveToFile];
+        }
+    } else {
+        _accounts = [NSMutableArray array];
+    }
     self.currentRoundRecords = [NSMutableArray array];
 }
 

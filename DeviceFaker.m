@@ -15,23 +15,19 @@ static void swizzleInstanceMethod(Class cls, SEL original, SEL fake) {
     }
 }
 
-// 获取当前账号对应的伪装标识字符串
 static NSString* currentFakedID(void) {
-    NSString *account = [AccountManager shared].currentAccount;
-    if (account.length == 0) {
-        return @"00000000-0000-0000-0000-000000000001";
-    }
-    return [[AccountManager shared] fakedDeviceIdentifierForAccount:account];
+    return [[AccountManager shared] currentFakedID] ?: @"00000000-0000-0000-0000-000000000001";
 }
 
-// 将伪装字符串转换为 NSUUID（用于 IDFV/IDFA）
+static NSString* currentFakedName(void) {
+    return [[AccountManager shared] currentFakedName] ?: @"iPhone";
+}
+
 static NSUUID* fakedUUID(void) {
     NSString *fakedStr = currentFakedID();
-    // 去除非十六进制字符，取前32位，不足补0
     NSString *clean = [fakedStr stringByReplacingOccurrencesOfString:@"-" withString:@""];
     if (clean.length > 32) clean = [clean substringToIndex:32];
     while (clean.length < 32) clean = [clean stringByAppendingString:@"0"];
-    // 格式化为 8-4-4-4-12
     NSMutableString *formatted = [NSMutableString string];
     for (NSInteger i = 0; i < clean.length; i++) {
         if (i == 8 || i == 12 || i == 16 || i == 20) [formatted appendString:@"-"];
@@ -40,7 +36,6 @@ static NSUUID* fakedUUID(void) {
     return [[NSUUID alloc] initWithUUIDString:formatted];
 }
 
-// 记录伪装日志
 static void logFake(NSString *type, NSString *value) {
     NSString *account = [AccountManager shared].currentAccount ?: @"无账号";
     NSString *msg = [NSString stringWithFormat:@"【伪装】-【%@】-【%@】-【%@】", account, type, value];
@@ -57,8 +52,7 @@ static void logFake(NSString *type, NSString *value) {
 - (NSUUID *)faker_identifierForVendor {
     @try {
         NSUUID *uuid = fakedUUID();
-        NSString *value = uuid.UUIDString;
-        logFake(@"IDFV", value);
+        logFake(@"IDFV", uuid.UUIDString);
         if ([FakerConfig isDebugMode]) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 [FakerConfig showDebugMessage:@"IDFV 已伪装"];
@@ -72,30 +66,25 @@ static void logFake(NSString *type, NSString *value) {
 
 - (NSString *)faker_name {
     @try {
-        NSString *fakeName = @"iPhone";
-        logFake(@"设备名", fakeName);
+        NSString *name = currentFakedName();
+        logFake(@"设备名", name);
         if ([FakerConfig isDebugMode]) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 [FakerConfig showDebugMessage:@"设备名称已伪装"];
             });
         }
-        return fakeName;
+        return name;
     } @catch (NSException *exception) {
         return @"iPhone";
     }
 }
 
-- (NSString *)faker_model {
-    return @"iPhone";
-}
-
-- (NSString *)faker_systemVersion {
-    return @"16.0";
-}
+- (NSString *)faker_model { return @"iPhone"; }
+- (NSString *)faker_systemVersion { return @"16.0"; }
 
 @end
 
-#pragma mark - ASIdentifierManager Hook (IDFA)
+#pragma mark - ASIdentifierManager Hook
 
 @interface ASIdentifierManager (Faker)
 @end
@@ -105,8 +94,7 @@ static void logFake(NSString *type, NSString *value) {
 - (NSUUID *)faker_advertisingIdentifier {
     @try {
         NSUUID *uuid = fakedUUID();
-        NSString *value = uuid.UUIDString;
-        logFake(@"IDFA", value);
+        logFake(@"IDFA", uuid.UUIDString);
         if ([FakerConfig isDebugMode]) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 [FakerConfig showDebugMessage:@"IDFA 已伪装"];
@@ -118,24 +106,18 @@ static void logFake(NSString *type, NSString *value) {
     }
 }
 
-- (BOOL)faker_isAdvertisingTrackingEnabled {
-    return YES;
-}
+- (BOOL)faker_isAdvertisingTrackingEnabled { return YES; }
 
 @end
-
-#pragma mark - 安装入口
 
 @implementation DeviceFaker
 
 + (void)install {
-    // UIDevice
     swizzleInstanceMethod([UIDevice class], @selector(identifierForVendor), @selector(faker_identifierForVendor));
     swizzleInstanceMethod([UIDevice class], @selector(name), @selector(faker_name));
     swizzleInstanceMethod([UIDevice class], @selector(model), @selector(faker_model));
     swizzleInstanceMethod([UIDevice class], @selector(systemVersion), @selector(faker_systemVersion));
 
-    // ASIdentifierManager (IDFA)
     Class asIdManager = NSClassFromString(@"ASIdentifierManager");
     if (asIdManager) {
         swizzleInstanceMethod(asIdManager, @selector(advertisingIdentifier), @selector(faker_advertisingIdentifier));

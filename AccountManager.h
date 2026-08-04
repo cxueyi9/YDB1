@@ -11,26 +11,26 @@
 @property (nonatomic, assign) CGPoint floatWindowPoint;
 @property (nonatomic, assign) NSTimeInterval pasteDelay;
 @property (nonatomic, assign) NSTimeInterval passwordDelay;
-@property (nonatomic, assign) BOOL floatLocked;      // 锁定图标拖拽
-@property (nonatomic, assign) BOOL tapLocked;        // 锁定点击填充
-@property (nonatomic, assign) BOOL autoLock;         // 自动锁定点击
+@property (nonatomic, assign) BOOL floatLocked;
+@property (nonatomic, assign) BOOL tapLocked;
+@property (nonatomic, assign) BOOL autoLock;
 
 @property (nonatomic, assign) NSInteger currentRound;
 @property (nonatomic, copy) NSString *roundAName;
 @property (nonatomic, copy) NSString *roundBName;
 @property (nonatomic, strong) NSDate *roundStartTime;
-@property (nonatomic, strong) NSDate *roundEndTime;  // 新增
+@property (nonatomic, strong) NSDate *roundEndTime;
 @property (nonatomic, assign) BOOL needLogRoundStart;
 
 @property (nonatomic, copy) NSString *serverURL;
 @property (nonatomic, strong, readonly) NSMutableArray<NSDictionary *> *currentRoundRecords;
 
-// 当前登录账号（由点击填充时自动记录）
+// 当前登录账号（填充时自动设置）
 @property (nonatomic, copy) NSString *currentAccount;
 
 - (NSString *)currentRoundName;
 - (void)switchToNextRound;
-- (void)finishRound;                                 // 新增：记录结束时间
+- (void)finishRound;
 
 - (NSDictionary *)nextAccount;
 - (void)updateAccountsWithText:(NSString *)text;
@@ -42,6 +42,7 @@
 - (NSString *)logFilePath;
 - (NSString *)readLogContent;
 - (void)clearLog;
+- (void)appendLog:(NSString *)message;   // 追加自定义日志
 
 // 本轮记录/上传
 - (void)addRoundRecordWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account;
@@ -53,14 +54,13 @@
 - (void)clearStagedRecords;
 - (void)uploadStagedRecordsWithCompletion:(void(^)(BOOL success, NSString *msg))completion;
 
+// 伪装信息
+- (NSString *)fakedDeviceIdentifierForAccount:(NSString *)account; // 已废弃，保留兼容
+- (NSString *)currentFakedID;   // 当前账号的伪装 UUID
+- (NSString *)currentFakedName; // 当前账号的伪装设备名
+
 - (void)resetProgress;
 - (void)saveToFile;
 - (NSString *)deviceIdentifier;
-
-// 根据账号生成唯一伪装标识
-- (NSString *)fakedDeviceIdentifierForAccount:(NSString *)account;
-
-// 追加自定义消息到本地日志文件
-- (void)appendLog:(NSString *)message;
 
 @end
