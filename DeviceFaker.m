@@ -5,8 +5,6 @@
 #import <AdSupport/AdSupport.h>
 #import <objc/runtime.h>
 
-#pragma mark - 辅助函数：交换实例方法
-
 static void swizzleInstanceMethod(Class cls, SEL original, SEL fake) {
     Method origM = class_getInstanceMethod(cls, original);
     Method fakeM = class_getInstanceMethod(cls, fake);
@@ -17,12 +15,12 @@ static void swizzleInstanceMethod(Class cls, SEL original, SEL fake) {
     }
 }
 
-#pragma mark - 获取当前伪装标识
-
 static NSString* currentFakedID(void) {
-    // 从 AccountManager 获取当前登录账号对应的伪装标识
     NSString *account = [AccountManager shared].currentAccount;
-    if (!account) return @"00000000-0000-0000-0000-000000000000"; // 默认占位
+    if (account.length == 0) {
+        // 默认返回一个固定的占位 UUID，保证格式正确
+        return @"00000000-0000-0000-0000-000000000001";
+    }
     return [[AccountManager shared] fakedDeviceIdentifierForAccount:account];
 }
 
@@ -34,22 +32,30 @@ static NSString* currentFakedID(void) {
 @implementation UIDevice (Faker)
 
 - (NSString *)faker_identifierForVendor {
-    NSString *faked = currentFakedID();
-    if ([FakerConfig isDebugMode]) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [FakerConfig showDebugMessage:@"IDFV 已伪装"];
-        });
+    @try {
+        NSString *faked = currentFakedID();
+        if ([FakerConfig isDebugMode]) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [FakerConfig showDebugMessage:@"IDFV 已伪装"];
+            });
+        }
+        return faked;
+    } @catch (NSException *exception) {
+        return @"00000000-0000-0000-0000-000000000001";
     }
-    return faked;
 }
 
 - (NSString *)faker_name {
-    if ([FakerConfig isDebugMode]) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [FakerConfig showDebugMessage:@"设备名称已伪装"];
-        });
+    @try {
+        if ([FakerConfig isDebugMode]) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [FakerConfig showDebugMessage:@"设备名称已伪装"];
+            });
+        }
+        return @"iPhone";
+    } @catch (NSException *exception) {
+        return @"iPhone";
     }
-    return @"iPhone";
 }
 
 - (NSString *)faker_model {
@@ -70,30 +76,31 @@ static NSString* currentFakedID(void) {
 @implementation ASIdentifierManager (Faker)
 
 - (NSUUID *)faker_advertisingIdentifier {
-    NSString *faked = currentFakedID();
-    if ([FakerConfig isDebugMode]) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [FakerConfig showDebugMessage:@"IDFA 已伪装"];
-        });
+    @try {
+        NSString *faked = currentFakedID();
+        if ([FakerConfig isDebugMode]) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [FakerConfig showDebugMessage:@"IDFA 已伪装"];
+            });
+        }
+        // 确保长度至少为 36，不足则用0填充
+        NSString *uuidStr = [faked stringByReplacingOccurrencesOfString:@"-" withString:@""];
+        if (uuidStr.length > 32) uuidStr = [uuidStr substringToIndex:32];
+        while (uuidStr.length < 32) uuidStr = [uuidStr stringByAppendingString:@"0"];
+        // 格式化为 8-4-4-4-12
+        NSMutableString *formatted = [NSMutableString string];
+        for (int i = 0; i < uuidStr.length; i++) {
+            if (i == 8 || i == 12 || i == 16 || i == 20) [formatted appendString:@"-"];
+            [formatted appendFormat:@"%C", [uuidStr characterAtIndex:i]];
+        }
+        return [[NSUUID alloc] initWithUUIDString:formatted];
+    } @catch (NSException *exception) {
+        return [[NSUUID alloc] initWithUUIDString:@"00000000-0000-0000-0000-000000000001"];
     }
-    return [[NSUUID alloc] initWithUUIDString:[faked substringToIndex:36]]; // 取前36位作为标准UUID
 }
 
 - (BOOL)faker_isAdvertisingTrackingEnabled {
     return YES;
-}
-
-@end
-
-#pragma mark - NSProcessInfo Hook (设备名等)
-
-@interface NSProcessInfo (Faker)
-@end
-
-@implementation NSProcessInfo (Faker)
-
-- (NSString *)faker_hostName {
-    return @"iPhone";
 }
 
 @end
@@ -115,9 +122,6 @@ static NSString* currentFakedID(void) {
         swizzleInstanceMethod(asIdManager, @selector(advertisingIdentifier), @selector(faker_advertisingIdentifier));
         swizzleInstanceMethod(asIdManager, @selector(isAdvertisingTrackingEnabled), @selector(faker_isAdvertisingTrackingEnabled));
     }
-
-    // NSProcessInfo (设备名)
-    swizzleInstanceMethod([NSProcessInfo class], @selector(hostName), @selector(faker_hostName));
 }
 
 @end
