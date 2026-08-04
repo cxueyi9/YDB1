@@ -5,7 +5,7 @@ CC = $(shell xcrun --sdk iphoneos --find clang)
 CFLAGS = -arch arm64 -isysroot $(SDK) -mios-version-min=12.0 -fobjc-arc -O2
 LDFLAGS = -dynamiclib -arch arm64 -isysroot $(SDK) -mios-version-min=12.0 \
           -framework UIKit -framework Foundation -framework CoreGraphics \
-          -framework AdSupport -framework CommonCrypto -lobjc
+          -framework AdSupport -lobjc
 
 OBJS = $(SRCS:.m=.o)
 
