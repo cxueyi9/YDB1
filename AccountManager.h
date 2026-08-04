@@ -60,4 +60,7 @@
 // 根据账号生成唯一伪装标识
 - (NSString *)fakedDeviceIdentifierForAccount:(NSString *)account;
 
+// 追加自定义消息到本地日志文件
+- (void)appendLog:(NSString *)message;
+
 @end

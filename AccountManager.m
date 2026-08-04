@@ -140,22 +140,26 @@
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"yyyy/M/d HH:mm";
     NSString *line = [NSString stringWithFormat:@"%@ 开始, %@\n", [self currentRoundName], [fmt stringFromDate:[NSDate date]]];
-    NSString *path = [self logFilePath];
-    NSFileManager *fm = [NSFileManager defaultManager];
-    if (![fm fileExistsAtPath:path]) {
-        [line writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    } else {
-        NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:path];
-        [fh seekToEndOfFile];
-        [fh writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
-        [fh closeFile];
-    }
+    [self appendLine:line];
 }
 
 - (void)recordLogWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account {
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"yyyy/M/d HH:mm";
     NSString *line = [NSString stringWithFormat:@"%ld/%ld, %@, %@\n", (long)index, (long)total, [fmt stringFromDate:[NSDate date]], account];
+    [self appendLine:line];
+}
+
+- (void)appendLog:(NSString *)message {
+    if (!message || message.length == 0) return;
+    NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
+    fmt.dateFormat = @"yyyy/M/d HH:mm:ss";
+    NSString *timeStr = [fmt stringFromDate:[NSDate date]];
+    NSString *line = [NSString stringWithFormat:@"%@ %@\n", timeStr, message];
+    [self appendLine:line];
+}
+
+- (void)appendLine:(NSString *)line {
     NSString *path = [self logFilePath];
     NSFileManager *fm = [NSFileManager defaultManager];
     if (![fm fileExistsAtPath:path]) {
@@ -293,7 +297,6 @@
 }
 
 - (void)saveToFile {
-    // 核心进度使用 NSUserDefaults 强力保存
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     [ud setInteger:self.currentIndex forKey:@"currentIndex"];
     [ud setInteger:self.currentRound forKey:@"currentRound"];
@@ -314,7 +317,6 @@
     [ud setObject:NSStringFromCGPoint(self.floatWindowPoint) forKey:@"floatWindowPoint"];
     [ud synchronize];
 
-    // 同时保存账号列表到 plist
     NSMutableArray *arr = [NSMutableArray array];
     for (NSDictionary *d in _accounts) [arr addObject:d];
     NSDictionary *data = @{

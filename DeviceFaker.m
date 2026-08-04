@@ -15,21 +15,36 @@ static void swizzleInstanceMethod(Class cls, SEL original, SEL fake) {
     }
 }
 
-// 生成一个合法的 NSUUID 对象，基于账号哈希
-static NSUUID* currentFakedUUID(void) {
+// 获取当前账号对应的伪装标识字符串
+static NSString* currentFakedID(void) {
     NSString *account = [AccountManager shared].currentAccount;
-    NSString *uuidStr;
     if (account.length == 0) {
-        uuidStr = @"00000000-0000-0000-0000-000000000001";
-    } else {
-        uuidStr = [[AccountManager shared] fakedDeviceIdentifierForAccount:account];
+        return @"00000000-0000-0000-0000-000000000001";
     }
-    NSUUID *uuid = [[NSUUID alloc] initWithUUIDString:uuidStr];
-    if (!uuid) {
-        // 降级：使用固定 UUID
-        uuid = [[NSUUID alloc] initWithUUIDString:@"00000000-0000-0000-0000-000000000001"];
+    return [[AccountManager shared] fakedDeviceIdentifierForAccount:account];
+}
+
+// 将伪装字符串转换为 NSUUID（用于 IDFV/IDFA）
+static NSUUID* fakedUUID(void) {
+    NSString *fakedStr = currentFakedID();
+    // 去除非十六进制字符，取前32位，不足补0
+    NSString *clean = [fakedStr stringByReplacingOccurrencesOfString:@"-" withString:@""];
+    if (clean.length > 32) clean = [clean substringToIndex:32];
+    while (clean.length < 32) clean = [clean stringByAppendingString:@"0"];
+    // 格式化为 8-4-4-4-12
+    NSMutableString *formatted = [NSMutableString string];
+    for (NSInteger i = 0; i < clean.length; i++) {
+        if (i == 8 || i == 12 || i == 16 || i == 20) [formatted appendString:@"-"];
+        [formatted appendFormat:@"%c", [clean characterAtIndex:i]];
     }
-    return uuid;
+    return [[NSUUID alloc] initWithUUIDString:formatted];
+}
+
+// 记录伪装日志
+static void logFake(NSString *type, NSString *value) {
+    NSString *account = [AccountManager shared].currentAccount ?: @"无账号";
+    NSString *msg = [NSString stringWithFormat:@"【伪装】-【%@】-【%@】-【%@】", account, type, value];
+    [[AccountManager shared] appendLog:msg];
 }
 
 #pragma mark - UIDevice Hook
@@ -39,16 +54,17 @@ static NSUUID* currentFakedUUID(void) {
 
 @implementation UIDevice (Faker)
 
-// 关键修复：必须返回 NSUUID 对象，而不是 NSString
 - (NSUUID *)faker_identifierForVendor {
     @try {
-        NSUUID *faked = currentFakedUUID();
+        NSUUID *uuid = fakedUUID();
+        NSString *value = uuid.UUIDString;
+        logFake(@"IDFV", value);
         if ([FakerConfig isDebugMode]) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 [FakerConfig showDebugMessage:@"IDFV 已伪装"];
             });
         }
-        return faked;
+        return uuid;
     } @catch (NSException *exception) {
         return [[NSUUID alloc] initWithUUIDString:@"00000000-0000-0000-0000-000000000001"];
     }
@@ -56,12 +72,14 @@ static NSUUID* currentFakedUUID(void) {
 
 - (NSString *)faker_name {
     @try {
+        NSString *fakeName = @"iPhone";
+        logFake(@"设备名", fakeName);
         if ([FakerConfig isDebugMode]) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 [FakerConfig showDebugMessage:@"设备名称已伪装"];
             });
         }
-        return @"iPhone";
+        return fakeName;
     } @catch (NSException *exception) {
         return @"iPhone";
     }
@@ -86,13 +104,15 @@ static NSUUID* currentFakedUUID(void) {
 
 - (NSUUID *)faker_advertisingIdentifier {
     @try {
-        NSUUID *faked = currentFakedUUID();
+        NSUUID *uuid = fakedUUID();
+        NSString *value = uuid.UUIDString;
+        logFake(@"IDFA", value);
         if ([FakerConfig isDebugMode]) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 [FakerConfig showDebugMessage:@"IDFA 已伪装"];
             });
         }
-        return faked;
+        return uuid;
     } @catch (NSException *exception) {
         return [[NSUUID alloc] initWithUUIDString:@"00000000-0000-0000-0000-000000000001"];
     }
