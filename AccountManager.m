@@ -1,5 +1,6 @@
 #import "AccountManager.h"
 #import <UIKit/UIKit.h>
+#import <CommonCrypto/CommonDigest.h>
 
 @interface AccountManager ()
 @property (nonatomic, strong) NSMutableArray<NSDictionary *> *currentRoundRecords;
@@ -38,6 +39,7 @@
 
         self.serverURL = @"http://你的服务器地址:5000/upload";
         self.currentRoundRecords = [NSMutableArray array];
+        self.currentAccount = @"";
     }
     return self;
 }
@@ -86,6 +88,7 @@
     self.roundEndTime = nil;
     self.needLogRoundStart = YES;
     self.tapLocked = NO;
+    self.currentAccount = @"";
     [self saveToFile];
 }
 
@@ -105,10 +108,29 @@
     self.roundEndTime = nil;
     self.needLogRoundStart = YES;
     self.tapLocked = NO;
+    self.currentAccount = @"";
     [self saveToFile];
 }
 
-#pragma mark - 本地日志（保持不变）
+#pragma mark - 伪装标识生成
+
+- (NSString *)fakedDeviceIdentifierForAccount:(NSString *)account {
+    if (!account || account.length == 0) return @"00000000-0000-0000-0000-000000000000";
+    
+    NSData *data = [account dataUsingEncoding:NSUTF8StringEncoding];
+    uint8_t digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
+    
+    NSMutableString *output = [NSMutableString stringWithCapacity:36];
+    for (int i = 0; i < 16; i++) {
+        if (i == 4 || i == 6 || i == 8 || i == 10) [output appendString:@"-"];
+        [output appendFormat:@"%02x", digest[i]];
+    }
+    return [output uppercaseString];
+}
+
+#pragma mark - 本地日志
+
 - (NSString *)logFilePath {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     return [paths.firstObject stringByAppendingPathComponent:@"fill_log.txt"];
@@ -154,7 +176,8 @@
     [[NSFileManager defaultManager] removeItemAtPath:[self logFilePath] error:nil];
 }
 
-#pragma mark - 本轮记录/上传（不变）
+#pragma mark - 本轮记录/上传
+
 - (void)addRoundRecordWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account {
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"yyyy/M/d HH:mm";
@@ -233,7 +256,8 @@
     [task resume];
 }
 
-#pragma mark - 暂存记录（不变）
+#pragma mark - 暂存记录
+
 - (NSString *)stagedFilePath {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     return [paths.firstObject stringByAppendingPathComponent:@"staged_records.plist"];
@@ -261,7 +285,7 @@
     return identifier;
 }
 
-#pragma mark - 持久化（改造：核心状态使用 NSUserDefaults）
+#pragma mark - 持久化
 
 - (NSString *)dataFilePath {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
@@ -269,7 +293,7 @@
 }
 
 - (void)saveToFile {
-    // 1. 保存核心进度到 NSUserDefaults（强制写入，不怕被杀）
+    // 核心进度使用 NSUserDefaults 强力保存
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     [ud setInteger:self.currentIndex forKey:@"currentIndex"];
     [ud setInteger:self.currentRound forKey:@"currentRound"];
@@ -282,14 +306,15 @@
     [ud setObject:self.roundAName ?: @"A轮" forKey:@"roundAName"];
     [ud setObject:self.roundBName ?: @"B轮" forKey:@"roundBName"];
     [ud setObject:self.serverURL ?: @"" forKey:@"serverURL"];
+    [ud setObject:self.currentAccount ?: @"" forKey:@"currentAccount"];
     if (self.roundStartTime) [ud setObject:self.roundStartTime forKey:@"roundStartTime"];
     else [ud removeObjectForKey:@"roundStartTime"];
     if (self.roundEndTime) [ud setObject:self.roundEndTime forKey:@"roundEndTime"];
     else [ud removeObjectForKey:@"roundEndTime"];
     [ud setObject:NSStringFromCGPoint(self.floatWindowPoint) forKey:@"floatWindowPoint"];
-    [ud synchronize];  // 立即同步
+    [ud synchronize];
 
-    // 2. 同时保存账号列表到 plist（以便完整备份）
+    // 同时保存账号列表到 plist
     NSMutableArray *arr = [NSMutableArray array];
     for (NSDictionary *d in _accounts) [arr addObject:d];
     NSDictionary *data = @{
@@ -307,14 +332,14 @@
         @"roundStartTime": self.roundStartTime ?: [NSDate date],
         @"roundEndTime": self.roundEndTime ?: [NSNull null],
         @"needLogRoundStart": @(self.needLogRoundStart),
-        @"serverURL": self.serverURL ?: @""
+        @"serverURL": self.serverURL ?: @"",
+        @"currentAccount": self.currentAccount ?: @""
     };
     [data writeToFile:[self dataFilePath] atomically:YES];
 }
 
 - (void)loadFromFile {
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    // 优先从 NSUserDefaults 恢复核心状态（即使应用被杀死也能保证最新）
     if ([ud objectForKey:@"currentIndex"] != nil) {
         self.currentIndex = [ud integerForKey:@"currentIndex"];
         self.currentRound = [ud integerForKey:@"currentRound"];
@@ -327,6 +352,7 @@
         self.roundAName = [ud stringForKey:@"roundAName"] ?: @"A轮";
         self.roundBName = [ud stringForKey:@"roundBName"] ?: @"B轮";
         self.serverURL = [ud stringForKey:@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
+        self.currentAccount = [ud stringForKey:@"currentAccount"] ?: @"";
         if ([ud objectForKey:@"roundStartTime"]) self.roundStartTime = [ud objectForKey:@"roundStartTime"];
         else self.roundStartTime = [NSDate date];
         if ([ud objectForKey:@"roundEndTime"]) self.roundEndTime = [ud objectForKey:@"roundEndTime"];
@@ -334,7 +360,6 @@
         NSString *fpStr = [ud stringForKey:@"floatWindowPoint"];
         if (fpStr) self.floatWindowPoint = CGPointFromString(fpStr);
     } else {
-        // 若 NSUserDefaults 中没有，从 plist 读取（兼容旧版数据）
         NSDictionary *data = [NSDictionary dictionaryWithContentsOfFile:[self dataFilePath]];
         if (data) {
             self.currentIndex = [data[@"currentIndex"] integerValue];
@@ -348,6 +373,7 @@
             self.roundAName = data[@"roundAName"] ?: @"A轮";
             self.roundBName = data[@"roundBName"] ?: @"B轮";
             self.serverURL = data[@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
+            self.currentAccount = data[@"currentAccount"] ?: @"";
             if ([data[@"roundStartTime"] isKindOfClass:[NSDate class]]) self.roundStartTime = data[@"roundStartTime"];
             else self.roundStartTime = [NSDate date];
             if ([data[@"roundEndTime"] isKindOfClass:[NSDate class]]) self.roundEndTime = data[@"roundEndTime"];
@@ -357,14 +383,9 @@
         }
     }
     
-    // 继续从 plist 中读取账号列表（文件方式存储可避免 NSUserDefaults 容量限制）
     NSDictionary *data = [NSDictionary dictionaryWithContentsOfFile:[self dataFilePath]];
     NSArray *arr = data[@"accounts"];
-    if (arr) {
-        _accounts = [arr mutableCopy];
-    }
-    
-    // 初始化内存中的记录数组
+    if (arr) _accounts = [arr mutableCopy];
     self.currentRoundRecords = [NSMutableArray array];
 }
 

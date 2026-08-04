@@ -1,10 +1,14 @@
 #import <UIKit/UIKit.h>
 #import "FloatWindow.h"
 #import "AccountManager.h"
+#import "DeviceFaker.h"
 
 __attribute__((constructor))
 static void onLoad(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
+        // 安装设备标识拦截
+        [DeviceFaker install];
+
         // 应用完全启动后创建浮窗
         [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
                                                           object:nil

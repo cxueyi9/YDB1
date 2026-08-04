@@ -25,6 +25,9 @@
 @property (nonatomic, copy) NSString *serverURL;
 @property (nonatomic, strong, readonly) NSMutableArray<NSDictionary *> *currentRoundRecords;
 
+// 当前登录账号（由点击填充时自动记录）
+@property (nonatomic, copy) NSString *currentAccount;
+
 - (NSString *)currentRoundName;
 - (void)switchToNextRound;
 - (void)finishRound;                                 // 新增：记录结束时间
@@ -53,5 +56,8 @@
 - (void)resetProgress;
 - (void)saveToFile;
 - (NSString *)deviceIdentifier;
+
+// 根据账号生成唯一伪装标识
+- (NSString *)fakedDeviceIdentifierForAccount:(NSString *)account;
 
 @end

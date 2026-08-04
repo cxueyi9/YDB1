@@ -451,7 +451,8 @@
     toast.textAlignment = NSTextAlignmentCenter; toast.font = [UIFont systemFontOfSize:15];
     toast.layer.cornerRadius = 8; toast.clipsToBounds = YES;
     CGSize size = [message sizeWithAttributes:@{NSFontAttributeName: toast.font}];
-    toast.frame = CGRectMake((keyWindow.bounds.size.width - size.width - 20)/2, keyWindow.bounds.size.height - 120, size.width + 20, size.height + 12);
+    toast.frame = CGRectMake((keyWindow.bounds.size.width - w)/2, 80, w, h);
+    // toast.frame = CGRectMake((keyWindow.bounds.size.width - size.width - 20)/2, keyWindow.bounds.size.height - 120, size.width + 20, size.height + 12);
     [keyWindow addSubview:toast];
     [UIView animateWithDuration:0.3 delay:1.5 options:0 animations:^{ toast.alpha = 0; } completion:^(BOOL finished) { [toast removeFromSuperview]; }];
 }
