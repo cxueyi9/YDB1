@@ -72,7 +72,7 @@
     NSInteger displayIndex = mgr.currentIndex + 1;
     
     if (mgr.needLogRoundStart && displayIndex == 1) {
-        [mgr switchToNextRound];          // 内部已 saveToFile
+        [mgr switchToNextRound];
         [mgr recordLogRoundStart];
         mgr.needLogRoundStart = NO;
         [mgr saveToFile];
@@ -80,6 +80,8 @@
     
     NSDictionary *acc = mgr.accounts[mgr.currentIndex % total];
     NSString *account = acc[@"account"], *password = acc[@"password"];
+    // 记录当前账号，用于伪装标识
+    mgr.currentAccount = account;
     [mgr recordLogWithIndex:displayIndex total:total account:account];
     [mgr addRoundRecordWithIndex:displayIndex total:total account:account];
     
@@ -391,7 +393,6 @@
         [self.rootViewController.view addSubview:_floatView];
         [self updateBadge];
 
-        // 从后台回到前台时刷新悬浮窗
         [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillEnterForegroundNotification
                                                           object:nil
                                                            queue:[NSOperationQueue mainQueue]
@@ -399,7 +400,6 @@
             [self updateBadge];
         }];
 
-        // 再注册一个即将非活跃的通知，确保进入后台时保存
         [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillResignActiveNotification
                                                           object:nil
                                                            queue:[NSOperationQueue mainQueue]
@@ -447,14 +447,26 @@
     UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
     if (!keyWindow) return;
     UILabel *toast = [[UILabel alloc] init];
-    toast.text = message; toast.textColor = [UIColor whiteColor]; toast.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
-    toast.textAlignment = NSTextAlignmentCenter; toast.font = [UIFont systemFontOfSize:15];
-    toast.layer.cornerRadius = 8; toast.clipsToBounds = YES;
+    toast.text = message;
+    toast.textColor = [UIColor whiteColor];
+    toast.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
+    toast.textAlignment = NSTextAlignmentCenter;
+    toast.font = [UIFont systemFontOfSize:15];
+    toast.layer.cornerRadius = 8;
+    toast.clipsToBounds = YES;
+    
     CGSize size = [message sizeWithAttributes:@{NSFontAttributeName: toast.font}];
+    CGFloat w = size.width + 20;
+    CGFloat h = size.height + 12;
+    // 调整到屏幕上方，避免被键盘遮挡
     toast.frame = CGRectMake((keyWindow.bounds.size.width - w)/2, 80, w, h);
-    // toast.frame = CGRectMake((keyWindow.bounds.size.width - size.width - 20)/2, keyWindow.bounds.size.height - 120, size.width + 20, size.height + 12);
     [keyWindow addSubview:toast];
-    [UIView animateWithDuration:0.3 delay:1.5 options:0 animations:^{ toast.alpha = 0; } completion:^(BOOL finished) { [toast removeFromSuperview]; }];
+    
+    [UIView animateWithDuration:0.3 delay:1.5 options:0 animations:^{
+        toast.alpha = 0;
+    } completion:^(BOOL finished) {
+        [toast removeFromSuperview];
+    }];
 }
 
 @end
