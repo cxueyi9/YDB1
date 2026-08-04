@@ -10,7 +10,7 @@ static BOOL debugMode = YES;
 }
 
 + (void)setDebugMode:(BOOL)debug {
-    debugMode = NO;
+    debugMode = debug;
 }
 
 + (void)showDebugMessage:(NSString *)msg {
