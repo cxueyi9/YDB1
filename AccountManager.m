@@ -29,14 +29,14 @@
         self.floatLocked = NO;
         self.tapLocked = NO;
         self.autoLock = NO;
-
+        self.detailedLog = NO;
         self.currentRound = 0;
         self.roundAName = @"A轮";
         self.roundBName = @"B轮";
         self.roundStartTime = [NSDate date];
         self.roundEndTime = nil;
         self.needLogRoundStart = YES;
-
+        self.detailedLog = NO;
         self.serverURL = @"http://你的服务器地址:5000/upload";
         self.currentRoundRecords = [NSMutableArray array];
         self.currentAccount = @"";

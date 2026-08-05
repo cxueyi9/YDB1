@@ -1,0 +1,131 @@
+#import "LocationFaker.h"
+#import "AccountManager.h"
+#import "FloatWindow.h"
+#import <objc/runtime.h>
+#import <UIKit/UIKit.h>
+
+static BOOL enabled = NO;
+static CLLocationCoordinate2D fakedCoord = {37.3349, -122.0093};
+static NSMutableArray *favorites = nil;
+
+@implementation LocationFaker
+
++ (void)loadFavorites {
+    if (!favorites) {
+        NSArray *saved = [[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"];
+        favorites = saved ? [saved mutableCopy] : [NSMutableArray array];
+    }
+}
+
++ (void)saveFavorites {
+    [[NSUserDefaults standardUserDefaults] setObject:favorites forKey:@"locationFavorites"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
++ (BOOL)isEnabled { return enabled; }
++ (void)setEnabled:(BOOL)en { enabled = en; }
++ (CLLocationCoordinate2D)currentCoordinate { return fakedCoord; }
++ (void)setCoordinate:(CLLocationCoordinate2D)coord { fakedCoord = coord; }
+
++ (void)install {
+    Method orig = class_getInstanceMethod([CLLocation class], @selector(coordinate));
+    if (!orig) return;
+
+    IMP fakeIMP = imp_implementationWithBlock(^CLLocationCoordinate2D(CLLocation *self) {
+        if (enabled) {
+            // 工作提示
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [FloatWindow showToast:[NSString stringWithFormat:@"定位已伪装 %.4f, %.4f", fakedCoord.latitude, fakedCoord.longitude]];
+            });
+            // 记录详细日志（如果开启）
+            if ([AccountManager shared].detailedLog) {
+                NSString *msg = [NSString stringWithFormat:@"【定位伪装】%.6f, %.6f", fakedCoord.latitude, fakedCoord.longitude];
+                [[AccountManager shared] appendLog:msg];
+            }
+            return fakedCoord;
+        }
+        // 调用原始方法
+        CLLocationCoordinate2D (*origCall)(id, SEL) = (void *)[CLLocation instanceMethodForSelector:@selector(coordinate)];
+        return origCall(self, @selector(coordinate));
+    });
+
+    method_setImplementation(orig, fakeIMP);
+}
+
+#pragma mark - Favorites VC
+
++ (UIViewController *)favoritesViewController {
+    [self loadFavorites];
+    LocationFavoritesVC *vc = [[LocationFavoritesVC alloc] initWithStyle:UITableViewStyleGrouped];
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
+    return nav;
+}
+
+@end
+
+// ---------- 收藏管理视图控制器 ----------
+@interface LocationFavoritesVC : UITableViewController
+@property (nonatomic, strong) NSMutableArray *dataSource;
+@end
+
+@implementation LocationFavoritesVC
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = @"收藏坐标";
+    self.dataSource = [NSMutableArray arrayWithArray:[[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"] ?: @[]];
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAdd target:self action:@selector(addFavorite)];
+    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(dismiss)];
+    [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"Cell"];
+}
+
+- (void)dismiss { [self dismissViewControllerAnimated:YES completion:nil]; }
+
+- (void)addFavorite {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"新增收藏" message:nil preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) { tf.placeholder = @"名称"; }];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) { tf.placeholder = @"纬度"; tf.keyboardType = UIKeyboardTypeDecimalPad; }];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) { tf.placeholder = @"经度"; tf.keyboardType = UIKeyboardTypeDecimalPad; }];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) { tf.placeholder = @"备注"; }];
+    [alert addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        NSString *name = alert.textFields[0].text ?: @"";
+        double lat = [alert.textFields[1].text doubleValue];
+        double lon = [alert.textFields[2].text doubleValue];
+        NSString *note = alert.textFields[3].text ?: @"";
+        if (lat != 0 && lon != 0) {
+            NSDictionary *item = @{@"name":name, @"lat":@(lat), @"lon":@(lon), @"note":note};
+            [self.dataSource addObject:item];
+            [LocationFaker saveFavorites];
+            [self.tableView reloadData];
+        }
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return self.dataSource.count; }
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"Cell"];
+    NSDictionary *item = self.dataSource[indexPath.row];
+    cell.textLabel.text = item[@"name"];
+    cell.detailTextLabel.text = item[@"note"];
+    return cell;
+}
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    NSDictionary *item = self.dataSource[indexPath.row];
+    double lat = [item[@"lat"] doubleValue], lon = [item[@"lon"] doubleValue];
+    [LocationFaker setCoordinate:CLLocationCoordinate2DMake(lat, lon)];
+    [LocationFaker setEnabled:YES];
+    [FloatWindow showToast:[NSString stringWithFormat:@"已切换定位到 %@", item[@"name"]]];
+    [self dismiss];
+}
+- (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath { return YES; }
+- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (editingStyle == UITableViewCellEditingStyleDelete) {
+        [self.dataSource removeObjectAtIndex:indexPath.row];
+        [LocationFaker saveFavorites];
+        [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+    }
+}
+@end

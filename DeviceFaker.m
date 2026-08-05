@@ -37,9 +37,11 @@ static NSUUID* fakedUUID(void) {
 }
 
 static void logFake(NSString *type, NSString *value) {
-    NSString *account = [AccountManager shared].currentAccount ?: @"无账号";
-    NSString *msg = [NSString stringWithFormat:@"【伪装】-【%@】-【%@】-【%@】", account, type, value];
-    [[AccountManager shared] appendLog:msg];
+    if ([AccountManager shared].detailedLog) {
+        NSString *account = [AccountManager shared].currentAccount ?: @"无账号";
+        NSString *msg = [NSString stringWithFormat:@"【伪装】-【%@】-【%@】-【%@】", account, type, value];
+        [[AccountManager shared] appendLog:msg];
+    }
 }
 
 #pragma mark - UIDevice Hook
