@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #import <CoreLocation/CoreLocation.h>
+#import <UIKit/UIKit.h>
 
 @interface LocationFaker : NSObject
 
@@ -9,7 +10,7 @@
 + (CLLocationCoordinate2D)currentCoordinate;
 + (void)setCoordinate:(CLLocationCoordinate2D)coord;
 
-// 直接显示收藏管理窗口
-+ (void)showFavoritesWindow;
+// 返回收藏管理页面（UINavigationController）
++ (UIViewController *)favoritesViewController;
 
 @end
