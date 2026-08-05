@@ -9,7 +9,7 @@
 + (CLLocationCoordinate2D)currentCoordinate;
 + (void)setCoordinate:(CLLocationCoordinate2D)coord;
 
-// 收藏管理，返回一个可直接 present 的 VC
+// 返回收藏管理视图控制器（UINavigationController）
 + (UIViewController *)favoritesViewController;
 
 @end
