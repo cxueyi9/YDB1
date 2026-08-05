@@ -8,6 +8,9 @@
 @property (nonatomic, strong) NSMutableArray *dataSource;
 @end
 
+// 用于持有窗口的静态变量
+static UIWindow *favoritesWindow = nil;
+
 // ========== 静态变量 ==========
 static BOOL enabled = NO;
 static CLLocationCoordinate2D fakedCoord = {37.3349, -122.0093};
@@ -64,9 +67,49 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
     return nav;
 }
 
+// 显示收藏窗口
++ (void)showFavoritesWindow {
+    loadFavorites();
+    // 如果已有窗口则先关闭
+    if (favoritesWindow) {
+        favoritesWindow.hidden = YES;
+        favoritesWindow = nil;
+    }
+
+    LocationFavoritesVC *vc = [[LocationFavoritesVC alloc] initWithStyle:UITableViewStyleGrouped];
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
+
+    // 创建新的窗口
+    UIWindowScene *scene = nil;
+    if (@available(iOS 13.0, *)) {
+        scene = (UIWindowScene *)[[[UIApplication sharedApplication] connectedScenes] anyObject];
+    }
+
+    if (scene) {
+        favoritesWindow = [[UIWindow alloc] initWithWindowScene:scene];
+    } else {
+        favoritesWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    }
+    favoritesWindow.frame = [UIScreen mainScreen].bounds;
+    favoritesWindow.windowLevel = UIWindowLevelAlert + 2;
+    favoritesWindow.backgroundColor = [UIColor clearColor];
+    favoritesWindow.rootViewController = nav;
+    favoritesWindow.hidden = NO;
+
+    // 设置关闭回调
+    vc.dismissBlock = ^{
+        favoritesWindow.hidden = YES;
+        favoritesWindow = nil;
+    };
+}
+
 @end
 
 // ========== 收藏列表控制器 ==========
+@interface LocationFavoritesVC ()
+@property (nonatomic, copy) void (^dismissBlock)(void);
+@end
+
 @implementation LocationFavoritesVC
 
 - (void)viewDidLoad {
@@ -79,9 +122,12 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
     self.tableView.rowHeight = 60;
 }
 
-- (void)dismiss { [self dismissViewControllerAnimated:YES completion:nil]; }
+- (void)dismiss {
+    if (self.dismissBlock) self.dismissBlock();
+}
 
 - (void)addFavorite {
+    // 使用独立窗口弹出 UIAlertController 也不会消失，因为窗口层级足够高
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"新增收藏" message:nil preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) { tf.placeholder = @"名称（可空）"; }];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) { tf.placeholder = @"纬度"; tf.keyboardType = UIKeyboardTypeDecimalPad; }];
