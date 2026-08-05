@@ -61,21 +61,25 @@
 - (void)handleTap:(UITapGestureRecognizer *)tap {
     if (self.isEditing) return;
     AccountManager *mgr = [AccountManager shared];
-    
-    // 点击冷却检查
-    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
-    if (now - mgr.lastClickTime < mgr.clickCooldown) {
-        NSInteger remain = (NSInteger)(mgr.clickCooldown - (now - mgr.lastClickTime)) + 1;
-        [FloatWindow showToast:[NSString stringWithFormat:@"请 %ld 秒后再点", (long)remain]];
-        return;
-    }
-    mgr.lastClickTime = now;
-    [mgr saveToFile]; // 立即保存时间戳
-    
+
+    // 1. 锁定点击检查（锁定状态下不处理任何点击，也不更新冷却）
     if (mgr.tapLocked) {
         [FloatWindow showToast:@"点击已锁定"];
         return;
     }
+
+    // 2. 冷却检查
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    if (mgr.clickCooldown > 0 && (now - mgr.lastClickTime) < mgr.clickCooldown) {
+        NSTimeInterval remaining = mgr.clickCooldown - (now - mgr.lastClickTime);
+        [FloatWindow showToast:[NSString stringWithFormat:@"请 %.0f 秒后再点", remaining]];
+        return;
+    }
+    // 更新最后点击时间（只有真正执行填充时才更新）
+    mgr.lastClickTime = now;
+    [mgr saveToFile];
+
+    // 原有填充逻辑继续
     NSInteger total = mgr.accounts.count;
     if (total == 0) return;
     
@@ -144,7 +148,7 @@
     
     AccountManager *mgr = [AccountManager shared];
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 480;
+    CGFloat panelH = 500;  // 稍微增加高度以容纳冷却输入框
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -153,10 +157,12 @@
     panel.tag = 1002;
     [superview addSubview:panel];
     
+    // 标题
     UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(15, 8, panelW-30, 18)];
     title.text = @"账号与设置"; title.font = [UIFont boldSystemFontOfSize:15];
     [panel addSubview:title];
     
+    // 账号列表（高度 120）
     UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(15, 28, panelW-30, 120)];
     tv.layer.borderWidth = 0.5; tv.layer.borderColor = [UIColor colorWithWhite:0.8 alpha:1].CGColor;
     tv.layer.cornerRadius = 6; tv.font = [UIFont systemFontOfSize:13];
@@ -169,16 +175,25 @@
     CGFloat labelWidth = 60, tfWidth = comboWidth - labelWidth - 5;
     CGFloat secondColX = leftMargin + comboWidth + 10;
     
-    // 粘贴延时 / 密码延时
+    // 第一行：粘贴延时 / 密码延时（保持原样）
     [self addLabel:@"粘贴延时" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
     [self addTextField:2000 value:[NSString stringWithFormat:@"%.1f", mgr.pasteDelay] frameX:leftMargin+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
     [self addLabel:@"密码延时" frameX:secondColX y:yPos w:labelWidth toPanel:panel];
     [self addTextField:2001 value:[NSString stringWithFormat:@"%.1f", mgr.passwordDelay] frameX:secondColX+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
     yPos += 32;
     
-    // 点击冷却
-    [self addLabel:@"冷却(秒)" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
+    // 新增行：点击冷却(秒)（单独占一行左半部分）
+    [self addLabel:@"点击冷却" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
     [self addTextField:2006 value:[NSString stringWithFormat:@"%.0f", mgr.clickCooldown] frameX:leftMargin+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
+    // 冷却输入框使用 tag 2006，键盘类型为数字
+    UITextField *cooldownTF = (UITextField *)[panel viewWithTag:2006];
+    cooldownTF.keyboardType = UIKeyboardTypeNumberPad;
+    // 右半部分留空或放提示
+    UILabel *hintLabel = [[UILabel alloc] initWithFrame:CGRectMake(secondColX, yPos, comboWidth, 20)];
+    hintLabel.text = @"秒，0为关闭冷却";
+    hintLabel.font = [UIFont systemFontOfSize:11];
+    hintLabel.textColor = [UIColor grayColor];
+    [panel addSubview:hintLabel];
     yPos += 32;
     
     // A轮名 / B轮名
@@ -289,8 +304,7 @@
     tf.borderStyle = UITextBorderStyleRoundedRect; tf.font = [UIFont systemFontOfSize:13];
     tf.text = value; tf.tag = tag;
     if (tag == 2000 || tag == 2001) tf.keyboardType = UIKeyboardTypeDecimalPad;
-    else if (tag == 2006) tf.keyboardType = UIKeyboardTypeNumberPad;
-    else if (tag == 3002) tf.keyboardType = UIKeyboardTypeNumberPad;
+    else if (tag == 3002 || tag == 2006) tf.keyboardType = UIKeyboardTypeNumberPad;
     [panel addSubview:tf];
 }
 - (void)addSwitch:(NSInteger)tag on:(BOOL)on frameX:(CGFloat)x y:(CGFloat)y toPanel:(UIView *)panel {
@@ -332,12 +346,13 @@
     
     mgr.pasteDelay = [[(UITextField *)[panel viewWithTag:2000] text] doubleValue];
     mgr.passwordDelay = [[(UITextField *)[panel viewWithTag:2001] text] doubleValue];
+    mgr.clickCooldown = [[(UITextField *)[panel viewWithTag:2006] text] doubleValue];
     if (mgr.pasteDelay < 0.1) mgr.pasteDelay = 1.0;
     if (mgr.passwordDelay < 0.1) mgr.passwordDelay = 0.5;
-    
-    // 点击冷却
-    mgr.clickCooldown = [[(UITextField *)[panel viewWithTag:2006] text] doubleValue];
-    if (mgr.clickCooldown < 1.0) mgr.clickCooldown = 30.0;
+    if (mgr.clickCooldown < 0) mgr.clickCooldown = 0;
+
+    // 重置冷却计时，让新冷却时间立即生效
+    mgr.lastClickTime = 0;
     
     mgr.floatLocked = ((UISwitch *)[panel viewWithTag:2002]).on;
     mgr.tapLocked = ((UISwitch *)[panel viewWithTag:2005]).on;
