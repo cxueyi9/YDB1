@@ -133,7 +133,7 @@
     }
 }
 
-// 辅助方法：用于在设置面板中快速添加控件
+// 辅助方法
 - (void)addLabel:(NSString *)text frameX:(CGFloat)x y:(CGFloat)y w:(CGFloat)w toPanel:(UIView *)panel {
     UILabel *lb = [[UILabel alloc] initWithFrame:CGRectMake(x, y, w, 20)];
     lb.text = text; lb.font = [UIFont systemFontOfSize:12];
@@ -338,12 +338,62 @@
     [cover addGestureRecognizer:tapCover];
 }
 
+// 使用独立窗口展示收藏页面，避免 present 限制
+static UIWindow *locationWindow = nil;
 - (void)openLocationFavorites {
     UIViewController *vc = [LocationFaker favoritesViewController];
-    if (vc) {
-        UIViewController *root = [UIApplication sharedApplication].keyWindow.rootViewController;
-        while (root.presentedViewController) root = root.presentedViewController;
-        [root presentViewController:vc animated:YES completion:nil];
+    if (!vc) return;
+    
+    // 创建新窗口
+    UIWindow *window;
+    if (@available(iOS 13.0, *)) {
+        UIWindowScene *scene = (UIWindowScene *)[[[UIApplication sharedApplication] connectedScenes] anyObject];
+        if (scene) {
+            window = [[UIWindow alloc] initWithWindowScene:scene];
+        } else {
+            window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        }
+    } else {
+        window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    }
+    window.windowLevel = UIWindowLevelAlert + 2;
+    window.backgroundColor = [UIColor clearColor];
+    window.rootViewController = vc;
+    window.hidden = NO;
+    locationWindow = window;
+    
+    // 监听关闭通知或手动关闭（在收藏 VC 的 dismiss 方法中处理）
+    // 这里简单处理：在 favoritesViewController 内部关闭时设置一个回调，我们通过 NSNotification 或者直接设置一个 dismissBlock
+    // 因为 LocationFavoritesVC 已经是 UINavigationController，其 leftBarButtonItem 是 Done，
+    // 我们在 Done 按钮的 dismiss 方法中已调用 dismissViewControllerAnimated，但现在是独立窗口，
+    // 我们需要在 dismiss 时隐藏并销毁窗口。
+    // 修改 LocationFaker 中的 favoritesViewController 返回的 VC，添加一个关闭回调。
+    // 为简化，我们在 FloatWindow 中监听该窗口隐藏？更好的做法是修改 LocationFaker 的 favoritesViewController 提供一个 dismissBlock。
+    // 此处我们给 navigationController 的 rootViewController 设置一个 dismissBlock，但 LocationFaker 返回的是 UINavigationController，
+    // 无法直接设，我们可以在 FloatWindow 中使用 associated object 或 KVO。
+    // 为快速解决，我们直接在 openLocationFavorites 中给 navigationController 的 rootViewController 设置 dismissBlock。
+    // 假设 vc 是 UINavigationController，其 rootViewController 是 LocationFavoritesVC，我们强制类型转换并设置 block。
+    if ([vc isKindOfClass:[UINavigationController class]]) {
+        UINavigationController *nav = (UINavigationController *)vc;
+        UIViewController *rootVC = nav.viewControllers.firstObject;
+        if ([rootVC respondsToSelector:@selector(setDismissBlock:)]) {
+            // LocationFavoritesVC 需要添加 dismissBlock 属性，为简化，我们使用通知或直接修改 LocationFavoritesVC 的 dismiss 方法。
+            // 我们可以用 runtime 添加一个 block 属性，但更简单的是，在 LocationFavoritesVC 中，当点击 Done 时，除了 dismiss 自身，还发送一个通知。
+            // 我们修改 LocationFaker.m 中的 LocationFavoritesVC 的 dismiss 方法，增加发送通知。
+            // 这里先假定我们已经修改了 LocationFavoritesVC，在 dismiss 时发送 @"LocationFavoritesDismissed" 通知。
+            // 然后在此处监听该通知，收到后隐藏并置空 locationWindow。
+            [[NSNotificationCenter defaultCenter] addObserverForName:@"LocationFavoritesDismissed"
+                                                              object:nil
+                                                               queue:[NSOperationQueue mainQueue]
+                                                          usingBlock:^(NSNotification *note) {
+                locationWindow.hidden = YES;
+                locationWindow = nil;
+                [[NSNotificationCenter defaultCenter] removeObserver:self name:@"LocationFavoritesDismissed" object:nil];
+            }];
+        } else {
+            // 如果没有 dismissBlock，我们无法可靠地关闭窗口，但可以设置一个延时检测？或者强制在 LocationFavoritesVC 中处理。
+            // 我们马上修改 LocationFaker.m，让 LocationFavoritesVC 的 dismiss 方法发送通知，并确保窗口关闭。
+        }
     }
 }
 

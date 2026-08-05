@@ -123,7 +123,9 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
 }
 
 - (void)dismiss {
-    if (self.dismissBlock) self.dismissBlock();
+    [self dismissViewControllerAnimated:YES completion:^{
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"LocationFavoritesDismissed" object:nil];
+    }];
 }
 
 - (void)addFavorite {
