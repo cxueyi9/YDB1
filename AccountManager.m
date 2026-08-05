@@ -40,6 +40,11 @@
         self.serverURL = @"http://你的服务器地址:5000/upload";
         self.currentRoundRecords = [NSMutableArray array];
         self.currentAccount = @"";
+        self.clickCooldown = 30.0;
+        self.lastClickTime = 0;
+        self.fakeLocationEnabled = NO;
+        self.locationFavorites = [NSMutableArray array];
+        self.selectedLocationIndex = -1;
     }
     return self;
 }
@@ -358,6 +363,8 @@
     [ud setObject:self.roundBName ?: @"B轮" forKey:@"roundBName"];
     [ud setObject:self.serverURL ?: @"" forKey:@"serverURL"];
     [ud setObject:self.currentAccount ?: @"" forKey:@"currentAccount"];
+    [ud setDouble:self.clickCooldown forKey:@"clickCooldown"];
+    [ud setDouble:self.lastClickTime forKey:@"lastClickTime"];
     if (self.roundStartTime) [ud setObject:self.roundStartTime forKey:@"roundStartTime"];
     else [ud removeObjectForKey:@"roundStartTime"];
     if (self.roundEndTime) [ud setObject:self.roundEndTime forKey:@"roundEndTime"];
@@ -401,6 +408,11 @@
         self.passwordDelay = [ud doubleForKey:@"passwordDelay"];
         self.roundAName = [ud stringForKey:@"roundAName"] ?: @"A轮";
         self.roundBName = [ud stringForKey:@"roundBName"] ?: @"B轮";
+        
+        self.clickCooldown = [ud doubleForKey:@"clickCooldown"];
+        self.lastClickTime = [ud doubleForKey:@"lastClickTime"];
+        if (self.clickCooldown < 1.0) self.clickCooldown = 30.0;
+        
         self.serverURL = [ud stringForKey:@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
         self.currentAccount = [ud stringForKey:@"currentAccount"] ?: @"";
         if ([ud objectForKey:@"roundStartTime"]) self.roundStartTime = [ud objectForKey:@"roundStartTime"];

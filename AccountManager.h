@@ -25,6 +25,16 @@
 @property (nonatomic, copy) NSString *serverURL;
 @property (nonatomic, strong, readonly) NSMutableArray<NSDictionary *> *currentRoundRecords;
 
+// 在原有属性后追加
+@property (nonatomic, assign) NSTimeInterval lastClickTime;   // 上次点击时间戳
+@property (nonatomic, assign) NSTimeInterval clickCooldown;   // 点击冷却秒数，默认30
+
+// 虚拟定位
+@property (nonatomic, assign) BOOL fakeLocationEnabled;       // 是否启用虚拟定位
+@property (nonatomic, strong) NSMutableArray<NSDictionary *> *locationFavorites; // 收藏地址列表
+@property (nonatomic, assign) NSInteger selectedLocationIndex; // 当前选中的地址索引，-1表示未选
+// 每个地址字典包含：name, latMin, latMax, lonMin, lonMax
+
 // 当前登录账号（填充时自动设置）
 @property (nonatomic, copy) NSString *currentAccount;
 
@@ -62,5 +72,7 @@
 - (void)resetProgress;
 - (void)saveToFile;
 - (NSString *)deviceIdentifier;
+
+
 
 @end

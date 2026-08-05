@@ -61,6 +61,17 @@
 - (void)handleTap:(UITapGestureRecognizer *)tap {
     if (self.isEditing) return;
     AccountManager *mgr = [AccountManager shared];
+    
+    // 点击冷却检查
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    if (now - mgr.lastClickTime < mgr.clickCooldown) {
+        NSInteger remain = (NSInteger)(mgr.clickCooldown - (now - mgr.lastClickTime)) + 1;
+        [FloatWindow showToast:[NSString stringWithFormat:@"请 %ld 秒后再点", (long)remain]];
+        return;
+    }
+    mgr.lastClickTime = now;
+    [mgr saveToFile]; // 立即保存时间戳
+    
     if (mgr.tapLocked) {
         [FloatWindow showToast:@"点击已锁定"];
         return;
@@ -80,7 +91,6 @@
     
     NSDictionary *acc = mgr.accounts[mgr.currentIndex % total];
     NSString *account = acc[@"account"], *password = acc[@"password"];
-    // 记录当前账号，用于伪装标识
     mgr.currentAccount = account;
     [mgr recordLogWithIndex:displayIndex total:total account:account];
     [mgr addRoundRecordWithIndex:displayIndex total:total account:account];
@@ -159,28 +169,38 @@
     CGFloat labelWidth = 60, tfWidth = comboWidth - labelWidth - 5;
     CGFloat secondColX = leftMargin + comboWidth + 10;
     
+    // 粘贴延时 / 密码延时
     [self addLabel:@"粘贴延时" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
     [self addTextField:2000 value:[NSString stringWithFormat:@"%.1f", mgr.pasteDelay] frameX:leftMargin+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
     [self addLabel:@"密码延时" frameX:secondColX y:yPos w:labelWidth toPanel:panel];
     [self addTextField:2001 value:[NSString stringWithFormat:@"%.1f", mgr.passwordDelay] frameX:secondColX+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
     yPos += 32;
     
+    // 点击冷却
+    [self addLabel:@"冷却(秒)" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
+    [self addTextField:2006 value:[NSString stringWithFormat:@"%.0f", mgr.clickCooldown] frameX:leftMargin+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
+    yPos += 32;
+    
+    // A轮名 / B轮名
     [self addLabel:@"A轮名" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
     [self addTextField:3000 value:mgr.roundAName frameX:leftMargin+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
     [self addLabel:@"B轮名" frameX:secondColX y:yPos w:labelWidth toPanel:panel];
     [self addTextField:3001 value:mgr.roundBName frameX:secondColX+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
     yPos += 34;
     
+    // 服务器地址
     [self addLabel:@"服务器地址" frameX:leftMargin y:yPos w:70 toPanel:panel];
     [self addTextField:3003 value:mgr.serverURL frameX:leftMargin+75 y:yPos-2 w:panelW-120 toPanel:panel];
     yPos += 34;
     
+    // 锁定图标 / 锁定点击
     [self addLabel:@"锁定图标" frameX:leftMargin y:yPos w:65 toPanel:panel];
     [self addSwitch:2002 on:mgr.floatLocked frameX:leftMargin+70 y:yPos-5 toPanel:panel];
     [self addLabel:@"锁定点击" frameX:secondColX y:yPos w:65 toPanel:panel];
     [self addSwitch:2005 on:mgr.tapLocked frameX:secondColX+70 y:yPos-5 toPanel:panel];
     yPos += 36;
     
+    // 自动锁定 / 跳转到
     [self addLabel:@"自动锁定" frameX:leftMargin y:yPos w:80 toPanel:panel];
     [self addSwitch:2004 on:mgr.autoLock frameX:leftMargin+85 y:yPos-5 toPanel:panel];
     UILabel *jumpLabel = [[UILabel alloc] initWithFrame:CGRectMake(secondColX, yPos, 45, 20)];
@@ -199,10 +219,12 @@
     [panel addSubview:goBtn];
     yPos += 36;
     
+    // 分隔线
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
     line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
     yPos += 8;
     
+    // 保存/取消
     UIButton *cancelBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     cancelBtn.frame = CGRectMake(panelW/2-110, yPos, 95, 32);
     [cancelBtn setTitle:@"取消" forState:UIControlStateNormal]; cancelBtn.titleLabel.font = [UIFont systemFontOfSize:14];
@@ -219,6 +241,7 @@
     [panel addSubview:saveBtn];
     yPos += 40;
     
+    // 轮次信息
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init]; fmt.dateFormat = @"HH:mm";
     BOOL isFinished = (mgr.currentIndex == 0 && mgr.accounts.count > 0 && mgr.roundEndTime != nil);
     NSString *status = isFinished ? @"已完成" : @"进行中";
@@ -232,6 +255,7 @@
     [panel addSubview:infoLabel];
     yPos += 22;
     
+    // 底部按钮行
     UIButton *copyLogBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     copyLogBtn.frame = CGRectMake(15, yPos, 80, 28);
     [copyLogBtn setTitle:@"复制日志" forState:UIControlStateNormal]; copyLogBtn.titleLabel.font = [UIFont systemFontOfSize:12];
@@ -265,6 +289,7 @@
     tf.borderStyle = UITextBorderStyleRoundedRect; tf.font = [UIFont systemFontOfSize:13];
     tf.text = value; tf.tag = tag;
     if (tag == 2000 || tag == 2001) tf.keyboardType = UIKeyboardTypeDecimalPad;
+    else if (tag == 2006) tf.keyboardType = UIKeyboardTypeNumberPad;
     else if (tag == 3002) tf.keyboardType = UIKeyboardTypeNumberPad;
     [panel addSubview:tf];
 }
@@ -309,6 +334,11 @@
     mgr.passwordDelay = [[(UITextField *)[panel viewWithTag:2001] text] doubleValue];
     if (mgr.pasteDelay < 0.1) mgr.pasteDelay = 1.0;
     if (mgr.passwordDelay < 0.1) mgr.passwordDelay = 0.5;
+    
+    // 点击冷却
+    mgr.clickCooldown = [[(UITextField *)[panel viewWithTag:2006] text] doubleValue];
+    if (mgr.clickCooldown < 1.0) mgr.clickCooldown = 30.0;
+    
     mgr.floatLocked = ((UISwitch *)[panel viewWithTag:2002]).on;
     mgr.tapLocked = ((UISwitch *)[panel viewWithTag:2005]).on;
     mgr.autoLock = ((UISwitch *)[panel viewWithTag:2004]).on;
@@ -458,7 +488,6 @@
     CGSize size = [message sizeWithAttributes:@{NSFontAttributeName: toast.font}];
     CGFloat w = size.width + 20;
     CGFloat h = size.height + 12;
-    // 调整到屏幕上方，避免被键盘遮挡
     toast.frame = CGRectMake((keyWindow.bounds.size.width - w)/2, 80, w, h);
     [keyWindow addSubview:toast];
     
