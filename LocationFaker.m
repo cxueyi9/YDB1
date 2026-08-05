@@ -1,13 +1,16 @@
 #import "LocationFaker.h"
 #import "AccountManager.h"
 #import "FloatWindow.h"
-#import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
+// 前向声明
+@interface LocationFavoritesVC : UITableViewController
+@property (nonatomic, strong) NSMutableArray *dataSource;
+@end
+
+// ========== 静态变量 ==========
 static BOOL enabled = NO;
 static CLLocationCoordinate2D fakedCoord = {37.3349, -122.0093};
-
-// ========== 收藏管理 ==========
 static NSMutableArray *favorites = nil;
 
 static void loadFavorites() {
@@ -25,12 +28,10 @@ static void saveFavorites() {
 static CLLocationCoordinate2D (*orig_coordinate)(id self, SEL _cmd);
 static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
     if (enabled) {
-        // 工作提示
         dispatch_async(dispatch_get_main_queue(), ^{
             [FloatWindow showToast:[NSString stringWithFormat:@"定位已伪装 %.4f, %.4f",
                                     fakedCoord.latitude, fakedCoord.longitude]];
         });
-        // 详细日志
         if ([AccountManager shared].detailedLog) {
             NSString *msg = [NSString stringWithFormat:@"【定位伪装】%.6f, %.6f",
                              fakedCoord.latitude, fakedCoord.longitude];
@@ -56,8 +57,6 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
 + (CLLocationCoordinate2D)currentCoordinate { return fakedCoord; }
 + (void)setCoordinate:(CLLocationCoordinate2D)coord { fakedCoord = coord; }
 
-#pragma mark - 收藏 VC
-
 + (UIViewController *)favoritesViewController {
     loadFavorites();
     LocationFavoritesVC *vc = [[LocationFavoritesVC alloc] initWithStyle:UITableViewStyleGrouped];
@@ -67,11 +66,7 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
 
 @end
 
-// ---------- 收藏列表控制器 ----------
-@interface LocationFavoritesVC : UITableViewController
-@property (nonatomic, strong) NSMutableArray *dataSource;
-@end
-
+// ========== 收藏列表控制器 ==========
 @implementation LocationFavoritesVC
 
 - (void)viewDidLoad {
