@@ -29,22 +29,20 @@
         self.floatLocked = NO;
         self.tapLocked = NO;
         self.autoLock = NO;
-        self.detailedLog = NO;
+
         self.currentRound = 0;
         self.roundAName = @"A轮";
         self.roundBName = @"B轮";
         self.roundStartTime = [NSDate date];
         self.roundEndTime = nil;
         self.needLogRoundStart = YES;
-        self.detailedLog = NO;
+
         self.serverURL = @"http://你的服务器地址:5000/upload";
         self.currentRoundRecords = [NSMutableArray array];
         self.currentAccount = @"";
         self.clickCooldown = 30.0;
         self.lastClickTime = 0;
-        self.fakeLocationEnabled = NO;
-        self.locationFavorites = [NSMutableArray array];
-        self.selectedLocationIndex = -1;
+        self.detailedLog = NO;
     }
     return self;
 }
@@ -81,30 +79,38 @@
         NSString *trimmed = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         if (trimmed.length == 0) continue;
         NSArray *parts = [trimmed componentsSeparatedByString:@":"];
-        if (parts.count < 3) continue; // 至少需要 序号:账号:密码
-        
-        NSString *account = parts[1];
-        NSString *password = parts[2];
-        if (account.length == 0) continue;
-        
-        NSString *fakedID = nil;
-        if (parts.count >= 4 && [parts[3] length] > 0) {
-            fakedID = parts[3];
-        } else {
-            fakedID = [self generateFakedIDForAccount:account];
+        if (parts.count >= 3) {
+            NSString *account = parts[1];
+            NSString *password = parts[2];
+            if (account.length == 0) continue;
+            NSString *fakedID = nil;
+            if (parts.count >= 4 && [parts[3] length] > 0) {
+                fakedID = parts[3];
+            } else {
+                fakedID = [self generateFakedIDForAccount:account];
+            }
+            NSString *fakedName = @"iPhone";
+            if (parts.count >= 5 && [parts[4] length] > 0) {
+                fakedName = parts[4];
+            }
+            [_accounts addObject:@{
+                @"account": account,
+                @"password": password,
+                @"fakedID": fakedID,
+                @"fakedName": fakedName
+            }];
+        } else if (parts.count == 2) {
+            // 兼容旧格式
+            NSString *account = parts[0];
+            NSString *password = parts[1];
+            NSString *fakedID = [self generateFakedIDForAccount:account];
+            [_accounts addObject:@{
+                @"account": account,
+                @"password": password,
+                @"fakedID": fakedID,
+                @"fakedName": @"iPhone"
+            }];
         }
-        
-        NSString *fakedName = @"iPhone";
-        if (parts.count >= 5 && [parts[4] length] > 0) {
-            fakedName = parts[4];
-        }
-        
-        [_accounts addObject:@{
-            @"account": account,
-            @"password": password,
-            @"fakedID": fakedID,
-            @"fakedName": fakedName
-        }];
     }
     self.currentIndex = 0;
     self.currentRound = 0;
@@ -120,10 +126,8 @@
     NSMutableString *text = [NSMutableString string];
     for (NSInteger i = 0; i < _accounts.count; i++) {
         NSDictionary *acc = _accounts[i];
-        NSString *fakedID = acc[@"fakedID"] ?: @"";
-        NSString *fakedName = acc[@"fakedName"] ?: @"iPhone";
         [text appendFormat:@"%ld:%@:%@:%@:%@\n", (long)(i+1),
-         acc[@"account"], acc[@"password"], fakedID, fakedName];
+         acc[@"account"], acc[@"password"], acc[@"fakedID"] ?: @"", acc[@"fakedName"] ?: @"iPhone"];
     }
     return text;
 }
@@ -139,8 +143,6 @@
     [self saveToFile];
 }
 
-#pragma mark - 伪装标识生成
-
 - (NSString *)generateFakedIDForAccount:(NSString *)account {
     if (!account || account.length == 0) return @"00000000-0000-0000-0000-000000000000";
     NSData *data = [account dataUsingEncoding:NSUTF8StringEncoding];
@@ -152,16 +154,6 @@
         [output appendFormat:@"%02x", digest[i]];
     }
     return [output uppercaseString];
-}
-
-- (NSString *)fakedDeviceIdentifierForAccount:(NSString *)account {
-    // 直接遍历查找
-    for (NSDictionary *acc in _accounts) {
-        if ([acc[@"account"] isEqualToString:account]) {
-            return acc[@"fakedID"] ?: [self generateFakedIDForAccount:account];
-        }
-    }
-    return [self generateFakedIDForAccount:account];
 }
 
 - (NSString *)currentFakedID {
@@ -359,12 +351,13 @@
     [ud setBool:self.floatLocked forKey:@"floatLocked"];
     [ud setDouble:self.pasteDelay forKey:@"pasteDelay"];
     [ud setDouble:self.passwordDelay forKey:@"passwordDelay"];
+    [ud setDouble:self.clickCooldown forKey:@"clickCooldown"];
+    [ud setDouble:self.lastClickTime forKey:@"lastClickTime"];
+    [ud setBool:self.detailedLog forKey:@"detailedLog"];
     [ud setObject:self.roundAName ?: @"A轮" forKey:@"roundAName"];
     [ud setObject:self.roundBName ?: @"B轮" forKey:@"roundBName"];
     [ud setObject:self.serverURL ?: @"" forKey:@"serverURL"];
     [ud setObject:self.currentAccount ?: @"" forKey:@"currentAccount"];
-    [ud setDouble:self.clickCooldown forKey:@"clickCooldown"];
-    [ud setDouble:self.lastClickTime forKey:@"lastClickTime"];
     if (self.roundStartTime) [ud setObject:self.roundStartTime forKey:@"roundStartTime"];
     else [ud removeObjectForKey:@"roundStartTime"];
     if (self.roundEndTime) [ud setObject:self.roundEndTime forKey:@"roundEndTime"];
@@ -390,7 +383,10 @@
         @"roundEndTime": self.roundEndTime ?: [NSNull null],
         @"needLogRoundStart": @(self.needLogRoundStart),
         @"serverURL": self.serverURL ?: @"",
-        @"currentAccount": self.currentAccount ?: @""
+        @"currentAccount": self.currentAccount ?: @"",
+        @"clickCooldown": @(self.clickCooldown),
+        @"lastClickTime": @(self.lastClickTime),
+        @"detailedLog": @(self.detailedLog)
     };
     [data writeToFile:[self dataFilePath] atomically:YES];
 }
@@ -406,13 +402,11 @@
         self.floatLocked = [ud boolForKey:@"floatLocked"];
         self.pasteDelay = [ud doubleForKey:@"pasteDelay"];
         self.passwordDelay = [ud doubleForKey:@"passwordDelay"];
-        self.roundAName = [ud stringForKey:@"roundAName"] ?: @"A轮";
-        self.roundBName = [ud stringForKey:@"roundBName"] ?: @"B轮";
-        
         self.clickCooldown = [ud doubleForKey:@"clickCooldown"];
         self.lastClickTime = [ud doubleForKey:@"lastClickTime"];
-        if (self.clickCooldown < 1.0) self.clickCooldown = 30.0;
-        
+        self.detailedLog = [ud boolForKey:@"detailedLog"];
+        self.roundAName = [ud stringForKey:@"roundAName"] ?: @"A轮";
+        self.roundBName = [ud stringForKey:@"roundBName"] ?: @"B轮";
         self.serverURL = [ud stringForKey:@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
         self.currentAccount = [ud stringForKey:@"currentAccount"] ?: @"";
         if ([ud objectForKey:@"roundStartTime"]) self.roundStartTime = [ud objectForKey:@"roundStartTime"];
@@ -432,6 +426,9 @@
             self.floatLocked = [data[@"floatLocked"] boolValue];
             self.pasteDelay = [data[@"pasteDelay"] doubleValue];
             self.passwordDelay = [data[@"passwordDelay"] doubleValue];
+            self.clickCooldown = data[@"clickCooldown"] ? [data[@"clickCooldown"] doubleValue] : 30.0;
+            self.lastClickTime = data[@"lastClickTime"] ? [data[@"lastClickTime"] doubleValue] : 0;
+            self.detailedLog = data[@"detailedLog"] ? [data[@"detailedLog"] boolValue] : NO;
             self.roundAName = data[@"roundAName"] ?: @"A轮";
             self.roundBName = data[@"roundBName"] ?: @"B轮";
             self.serverURL = data[@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
@@ -444,17 +441,15 @@
             if (fp) self.floatWindowPoint = CGPointFromString(fp);
         }
     }
-    
+
     NSDictionary *data = [NSDictionary dictionaryWithContentsOfFile:[self dataFilePath]];
     NSArray *arr = data[@"accounts"];
     if (arr) {
         _accounts = [arr mutableCopy];
-        // 兼容旧数据：若缺失 fakedID/fakedName，自动生成并保存
         BOOL modified = NO;
         for (NSMutableDictionary *acc in _accounts) {
             if (!acc[@"fakedID"]) {
-                NSString *genID = [self generateFakedIDForAccount:acc[@"account"]];
-                acc[@"fakedID"] = genID;
+                acc[@"fakedID"] = [self generateFakedIDForAccount:acc[@"account"]];
                 modified = YES;
             }
             if (!acc[@"fakedName"]) {
@@ -462,9 +457,7 @@
                 modified = YES;
             }
         }
-        if (modified) {
-            [self saveToFile];
-        }
+        if (modified) [self saveToFile];
     } else {
         _accounts = [NSMutableArray array];
     }
