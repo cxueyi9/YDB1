@@ -262,7 +262,7 @@
     
     UILabel *currentLocLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, panelW-30, 20)];
     CLLocationCoordinate2D curLoc = [LocationFaker currentCoordinate];
-    currentLocLabel.text = [NSString stringWithFormat:@"当前: %.6f, %.6f", curLoc.latitude, curLoc.longitude];
+    currentLocLabel.text = [NSString stringWithFormat:@"当前: %@", [LocationFaker currentName]];
     currentLocLabel.font = [UIFont systemFontOfSize:11]; currentLocLabel.textColor = [UIColor darkGrayColor];
     [panel addSubview:currentLocLabel];
     yPos += 22;
