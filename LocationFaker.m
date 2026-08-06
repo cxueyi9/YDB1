@@ -61,7 +61,7 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"收藏坐标";
-    self.view.backgroundColor = [UIColor colorWithWhite:0.1 alpha:1];
+    self.view.backgroundColor = [UIColor whiteColor];        // 白色背景
     self.dataSource = [NSMutableArray arrayWithArray:[[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"] ?: @[]];
     
     // 左侧完成按钮
@@ -77,48 +77,44 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
     // 名称
     UILabel *nameLabel = [[UILabel alloc] initWithFrame:CGRectMake(margin, y, labelW, fieldH)];
     nameLabel.text = @"名称";
-    nameLabel.textColor = [UIColor whiteColor];
+    nameLabel.textColor = [UIColor blackColor];
     [self.view addSubview:nameLabel];
     _nameField = [[UITextField alloc] initWithFrame:CGRectMake(margin + labelW, y, self.view.bounds.size.width - margin*2 - labelW, fieldH)];
     _nameField.placeholder = @"可选";
     _nameField.borderStyle = UITextBorderStyleRoundedRect;
-    _nameField.backgroundColor = [UIColor darkGrayColor];
-    _nameField.textColor = [UIColor whiteColor];
+    _nameField.textColor = [UIColor blackColor];
     [self.view addSubview:_nameField];
     y += fieldH + 8;
     
     // 纬度/经度
     UILabel *latLabel = [[UILabel alloc] initWithFrame:CGRectMake(margin, y, labelW, fieldH)];
     latLabel.text = @"纬度";
-    latLabel.textColor = [UIColor whiteColor];
+    latLabel.textColor = [UIColor blackColor];
     [self.view addSubview:latLabel];
     _latField = [[UITextField alloc] initWithFrame:CGRectMake(margin + labelW, y, (self.view.bounds.size.width - margin*2 - labelW - 10)/2, fieldH)];
     _latField.placeholder = @"纬度";
     _latField.borderStyle = UITextBorderStyleRoundedRect;
     _latField.keyboardType = UIKeyboardTypeDecimalPad;
-    _latField.backgroundColor = [UIColor darkGrayColor];
-    _latField.textColor = [UIColor whiteColor];
+    _latField.textColor = [UIColor blackColor];
     [self.view addSubview:_latField];
     
     _lonField = [[UITextField alloc] initWithFrame:CGRectMake(margin + labelW + (self.view.bounds.size.width - margin*2 - labelW - 10)/2 + 10, y, (self.view.bounds.size.width - margin*2 - labelW - 10)/2, fieldH)];
     _lonField.placeholder = @"经度";
     _lonField.borderStyle = UITextBorderStyleRoundedRect;
     _lonField.keyboardType = UIKeyboardTypeDecimalPad;
-    _lonField.backgroundColor = [UIColor darkGrayColor];
-    _lonField.textColor = [UIColor whiteColor];
+    _lonField.textColor = [UIColor blackColor];
     [self.view addSubview:_lonField];
     y += fieldH + 8;
     
     // 备注
     UILabel *noteLabel = [[UILabel alloc] initWithFrame:CGRectMake(margin, y, labelW, fieldH)];
     noteLabel.text = @"备注";
-    noteLabel.textColor = [UIColor whiteColor];
+    noteLabel.textColor = [UIColor blackColor];
     [self.view addSubview:noteLabel];
     _noteField = [[UITextField alloc] initWithFrame:CGRectMake(margin + labelW, y, self.view.bounds.size.width - margin*2 - labelW, fieldH)];
     _noteField.placeholder = @"可选";
     _noteField.borderStyle = UITextBorderStyleRoundedRect;
-    _noteField.backgroundColor = [UIColor darkGrayColor];
-    _noteField.textColor = [UIColor whiteColor];
+    _noteField.textColor = [UIColor blackColor];
     [self.view addSubview:_noteField];
     y += fieldH + 12;
     
@@ -144,8 +140,8 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
     
     // 收藏列表
     _tableView = [[UITableView alloc] initWithFrame:CGRectMake(margin, y, self.view.bounds.size.width - margin*2, self.view.bounds.size.height - y - 20) style:UITableViewStylePlain];
-    _tableView.backgroundColor = [UIColor clearColor];
-    _tableView.separatorColor = [UIColor grayColor];
+    _tableView.backgroundColor = [UIColor whiteColor];
+    _tableView.separatorColor = [UIColor lightGrayColor];
     _tableView.delegate = self;
     _tableView.dataSource = self;
     _tableView.rowHeight = 50;
@@ -153,9 +149,10 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
 }
 
 - (void)doneAction {
-    // 发送通知关闭独立窗口
+    // 直接隐藏当前窗口（独立窗口），确保关闭
+    self.view.window.hidden = YES;
+    // 同时发送通知，便于 FloatWindow 清理引用（可选）
     [[NSNotificationCenter defaultCenter] postNotificationName:@"LocationFavoritesDismissed" object:nil];
-    [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (void)applyCoords {
@@ -189,9 +186,9 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"Cell"];
     if (!cell) {
         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"Cell"];
-        cell.textLabel.textColor = [UIColor whiteColor];
-        cell.detailTextLabel.textColor = [UIColor lightGrayColor];
-        cell.backgroundColor = [UIColor clearColor];
+        cell.textLabel.textColor = [UIColor blackColor];
+        cell.detailTextLabel.textColor = [UIColor darkGrayColor];
+        cell.backgroundColor = [UIColor whiteColor];
     }
     NSDictionary *item = self.dataSource[indexPath.row];
     cell.textLabel.text = item[@"name"];
