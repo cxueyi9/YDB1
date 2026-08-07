@@ -3,9 +3,10 @@
 #import "LocationFaker.h"
 
 @interface FloatView : UIView
-@property (nonatomic, weak) UILabel *locNameLabel;   // 定位名称
+@property (nonatomic, weak) UILabel *locNameLabel;
 @property (nonatomic, weak) UILabel *badgeLabel;
 @property (nonatomic, assign) BOOL isEditing;
+@property (nonatomic, copy) NSString *previousLocName;   // 用于检测定位修改
 @end
 
 @implementation FloatView
@@ -79,7 +80,6 @@
     [UIApplication sharedApplication].idleTimerDisabled = YES;
     NSInteger displayIndex = mgr.currentIndex + 1;
     
-    // 一轮开始计时：如果是第一条记录且尚未开始一轮，则记录开始时间
     if (displayIndex == 1 && !mgr.roundStartTime) {
         mgr.roundStartTime = [NSDate date];
         mgr.roundEndTime = nil;
@@ -98,7 +98,6 @@
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     
-    // 一轮结束：当 currentIndex == 0 且之前有开始时间
     if (mgr.currentIndex == 0 && mgr.roundStartTime) {
         mgr.roundEndTime = [NSDate date];
         if (mgr.autoLock) mgr.tapLocked = YES;
@@ -158,7 +157,7 @@
     
     AccountManager *mgr = [AccountManager shared];
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 550;  // 增加高度
+    CGFloat panelH = 550;
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -282,7 +281,7 @@
     [panel addSubview:saveBtn];
     yPos += 40;
     
-    // 信息标签（动态显示）
+    // 信息标签
     UILabel *infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 18)];
     infoLabel.font = [UIFont boldSystemFontOfSize:13];
     infoLabel.textColor = [UIColor darkGrayColor];
@@ -322,26 +321,34 @@
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"HH:mm";
     
+    BOOL locEnabled = [LocationFaker isEnabled];
+    NSString *locName = [LocationFaker currentName];
+    if (!locEnabled || locName.length == 0) {
+        label.text = @"未定位";
+        return;
+    }
+    
     if (mgr.roundStartTime) {
-        NSString *locName = [LocationFaker currentName];
-        if (![LocationFaker isEnabled] || locName.length == 0) locName = @"未知定位";
-        
         if (mgr.roundEndTime) {
-            label.text = [NSString stringWithFormat:@"【%@】已结束，启动时间：%@，结束时间：%@",
+            label.text = [NSString stringWithFormat:@"【%@】已结束，启动：%@，结束：%@",
                           locName,
                           [fmt stringFromDate:mgr.roundStartTime],
                           [fmt stringFromDate:mgr.roundEndTime]];
         } else {
-            label.text = [NSString stringWithFormat:@"【%@】进行中，启动时间：%@",
+            label.text = [NSString stringWithFormat:@"【%@】进行中，启动：%@",
                           locName,
                           [fmt stringFromDate:mgr.roundStartTime]];
         }
     } else {
-        label.text = @"未定位";
+        // 无开始时间，可能是刚修改定位
+        label.text = [NSString stringWithFormat:@"【%@】已修改定位，待开始！", locName];
     }
 }
 
 - (void)openLocationFavorites {
+    // 保存当前定位名称，用于检测修改
+    self.previousLocName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
+    
     UIViewController *vc = [LocationFaker favoritesViewController];
     if (!vc) return;
     
@@ -359,17 +366,32 @@
     static UIWindow *locationWindow = nil;
     locationWindow = window;
     
+    __weak typeof(self) weakSelf = self;
     [[NSNotificationCenter defaultCenter] addObserverForName:@"LocationFavoritesDismissed"
                                                       object:nil
                                                        queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification *note) {
+        __strong typeof(weakSelf) self = weakSelf;
         UIView *panel = [self settingsPanel];
+        if (!panel) return;
+        
         UILabel *locLabel = (UILabel *)[panel viewWithTag:3007];
         if (locLabel) {
             locLabel.text = [LocationFaker isEnabled] ? [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]] : @"当前未启用";
         }
+        
+        // 检查定位是否被修改
+        NSString *newLocName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
+        if (![newLocName isEqualToString:self.previousLocName]) {
+            AccountManager *mgr = [AccountManager shared];
+            mgr.roundStartTime = nil;
+            mgr.roundEndTime = nil;
+            [mgr saveToFile];
+        }
+        
         UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
         [self updateInfoLabel:infoLabel];
+        
         locationWindow.hidden = YES;
         locationWindow = nil;
         [[NSNotificationCenter defaultCenter] removeObserver:self name:@"LocationFavoritesDismissed" object:nil];
@@ -391,7 +413,6 @@
     if (targetLine > total) targetLine = total;
     
     mgr.currentIndex = targetLine == total ? 0 : targetLine;
-    // 跳转后重置一轮计时
     mgr.roundStartTime = nil;
     mgr.roundEndTime = nil;
     [mgr saveToFile];
@@ -404,9 +425,7 @@
     UITextView *tv = (UITextView *)[panel viewWithTag:1003];
     AccountManager *mgr = [AccountManager shared];
     NSString *newText = tv.text;
-    if (![newText isEqualToString:[mgr exportAccountsText]]) {
-        [mgr updateAccountsWithText:newText]; // 会重置时间
-    }
+    if (![newText isEqualToString:[mgr exportAccountsText]]) [mgr updateAccountsWithText:newText];
     
     mgr.pasteDelay = [[(UITextField *)[panel viewWithTag:2000] text] doubleValue];
     mgr.passwordDelay = [[(UITextField *)[panel viewWithTag:2001] text] doubleValue];
