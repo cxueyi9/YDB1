@@ -15,6 +15,7 @@
 @property (nonatomic, strong) NSMutableArray *dataSource;
 @property (nonatomic, strong) CLLocationManager *locationManager;
 @property (nonatomic, copy) void (^realInfoCompletion)(CLLocationCoordinate2D coord, FakeBaseStation bs);
+- (void)startRealInfoFetch;   // 新增声明
 @end
 
 // ========== 静态变量 ==========
@@ -104,7 +105,7 @@ static NSString* replaced_mobileCountryCode(id self, SEL _cmd) {
 static NSString* (*orig_isoCountryCode)(id self, SEL _cmd);
 static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
     if (enabled && fakedBS.hasBaseStation) {
-        return @"cn";  // 简单伪装
+        return @"cn";
     }
     return orig_isoCountryCode(self, _cmd);
 }
@@ -174,12 +175,9 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
 }
 
 + (void)requestRealLocationAndBaseStationWithCompletion:(void(^)(CLLocationCoordinate2D coord, FakeBaseStation bs))completion {
-    // 通过 LocationFavoritesVC 中的 locationManager 实现
     LocationFavoritesVC *vc = [[LocationFavoritesVC alloc] init];
     vc.realInfoCompletion = completion;
-    // 启动定位并获取基站
     [vc startRealInfoFetch];
-    // 由于 vc 未显示，需确保异步回调正常，可临时持有 vc
     objc_setAssociatedObject([NSNull null], "RealInfoVC", vc, OBJC_ASSOCIATION_RETAIN);
 }
 
@@ -243,7 +241,8 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
     
     // 基站信息 (MCC, MNC, LAC, CID)
     NSArray *bsLabels = @[@"MCC", @"MNC", @"LAC", @"CID"];
-    NSArray *bsFields = @[_mccField = [self createBSField], _mncField = [self createBSField], _lacField = [self createBSField], _cidField = [self createBSField]];
+    _mccField = [self createBSField]; _mncField = [self createBSField]; _lacField = [self createBSField]; _cidField = [self createBSField];
+    NSArray *bsFields = @[_mccField, _mncField, _lacField, _cidField];
     CGFloat smallW = (self.view.bounds.size.width - margin*2 - labelW - 3*10) / 4;
     for (int i = 0; i < 4; i++) {
         UILabel *lb = [[UILabel alloc] initWithFrame:CGRectMake(margin + (smallW+10)*i, y, 30, fieldH)];
@@ -302,14 +301,17 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
 }
 
 - (void)fetchRealInfo {
+    __weak typeof(self) weakSelf = self;
     self.realInfoCompletion = ^(CLLocationCoordinate2D coord, FakeBaseStation bs) {
-        self.latField.text = [NSString stringWithFormat:@"%.6f", coord.latitude];
-        self.lonField.text = [NSString stringWithFormat:@"%.6f", coord.longitude];
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        strongSelf.latField.text = [NSString stringWithFormat:@"%.6f", coord.latitude];
+        strongSelf.lonField.text = [NSString stringWithFormat:@"%.6f", coord.longitude];
         if (bs.hasBaseStation) {
-            self.mccField.text = [NSString stringWithFormat:@"%ld", (long)bs.mcc];
-            self.mncField.text = [NSString stringWithFormat:@"%ld", (long)bs.mnc];
-            self.lacField.text = [NSString stringWithFormat:@"%ld", (long)bs.lac];
-            self.cidField.text = [NSString stringWithFormat:@"%ld", (long)bs.cid];
+            strongSelf.mccField.text = [NSString stringWithFormat:@"%ld", (long)bs.mcc];
+            strongSelf.mncField.text = [NSString stringWithFormat:@"%ld", (long)bs.mnc];
+            strongSelf.lacField.text = [NSString stringWithFormat:@"%ld", (long)bs.lac];
+            strongSelf.cidField.text = [NSString stringWithFormat:@"%ld", (long)bs.cid];
         }
     };
     [self startRealInfoFetch];
@@ -319,13 +321,24 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
 - (void)locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray<CLLocation *> *)locations {
     CLLocation *loc = locations.lastObject;
     if (loc && self.realInfoCompletion) {
-        // 获取基站信息
         CTTelephonyNetworkInfo *info = [[CTTelephonyNetworkInfo alloc] init];
-        CTCarrier *carrier = info.subscriberCellularProvider;
+        CTCarrier *carrier = nil;
+        if (@available(iOS 12.0, *)) {
+            // 使用新API获取默认数据服务的carrier
+            NSString *service = info.dataServiceIdentifier ?: [info.serviceSubscriberCellularProviders.allKeys firstObject];
+            if (service) {
+                carrier = info.serviceSubscriberCellularProviders[service];
+            }
+        } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+            carrier = info.subscriberCellularProvider;
+#pragma clang diagnostic pop
+        }
         FakeBaseStation bs;
-        bs.mcc = [carrier.mobileCountryCode integerValue];
-        bs.mnc = [carrier.mobileNetworkCode integerValue];
-        bs.lac = 0; // 实际需要基站定位才可获得，这里假数据
+        bs.mcc = carrier ? [carrier.mobileCountryCode integerValue] : 0;
+        bs.mnc = carrier ? [carrier.mobileNetworkCode integerValue] : 0;
+        bs.lac = 0; // 无法直接获取
         bs.cid = 0;
         bs.hasBaseStation = (carrier != nil);
         self.realInfoCompletion(loc.coordinate, bs);
@@ -342,7 +355,6 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
 }
 
 - (void)doneAction {
-    // 应用当前输入
     [self applyCoords];
     self.view.window.hidden = YES;
     [[NSNotificationCenter defaultCenter] postNotificationName:@"LocationFavoritesDismissed" object:nil];
@@ -363,8 +375,9 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
         bs.hasBaseStation = YES;
         [LocationFaker setBaseStation:bs];
     } else {
-        fakedBS.hasBaseStation = NO;
-        [LocationFaker setBaseStation:fakedBS];
+        FakeBaseStation bs = fakedBS;
+        bs.hasBaseStation = NO;
+        [LocationFaker setBaseStation:bs];
     }
     [LocationFaker setEnabled:_enableSwitch.on];
 }
@@ -401,7 +414,6 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
         item[@"cid"] = @([_cidField.text integerValue]);
     }
     
-    // 检查重名或同坐标更新
     NSInteger idx = -1;
     for (NSInteger i = 0; i < self.dataSource.count; i++) {
         NSDictionary *d = self.dataSource[i];
@@ -454,7 +466,6 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
     _mncField.text = item[@"mnc"] ? [item[@"mnc"] stringValue] : @"";
     _lacField.text = item[@"lac"] ? [item[@"lac"] stringValue] : @"";
     _cidField.text = item[@"cid"] ? [item[@"cid"] stringValue] : @"";
-    // 自动应用
     [self applyCoords];
     [self doneAction];
 }
