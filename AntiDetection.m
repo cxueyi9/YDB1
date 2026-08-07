@@ -12,7 +12,12 @@
 #import <mach/vm_map.h>
 #import <mach/mach.h>
 
-// ========== fishhook 结构定义 ==========
+// 架构适配（arm64 永远为 64 位）
+#ifndef LC_SEGMENT_ARCH_DEPENDENT
+#define LC_SEGMENT_ARCH_DEPENDENT LC_SEGMENT_64
+#endif
+
+// fishhook 结构
 struct rebinding {
     const char *name;
     void *replacement;
@@ -25,7 +30,7 @@ struct rebindings_entry {
     struct rebindings_entry *next;
 };
 
-// ========== fishhook 实现 ==========
+// fishhook 实现
 static struct rebindings_entry *_rebindings_head;
 
 static int prepend_rebindings(struct rebindings_entry **rebindings_head,
@@ -46,9 +51,9 @@ static int prepend_rebindings(struct rebindings_entry **rebindings_head,
 }
 
 static void perform_rebinding_with_section(struct rebindings_entry *rebindings,
-                                           section_t *section,
+                                           struct section_64 *section,
                                            intptr_t slide,
-                                           nlist_t *symtab,
+                                           struct nlist_64 *symtab,
                                            char *strtab,
                                            uint32_t *indirect_symtab) {
     uint32_t *indirect_symbol_indices = indirect_symtab + section->reserved1;
@@ -93,14 +98,14 @@ static void rebind_symbols_for_image(struct rebindings_entry *rebindings,
     Dl_info info;
     if (dladdr(header, &info) == 0) return;
 
-    segment_command_t *cur_seg_cmd;
-    segment_command_t *linkedit_segment = NULL;
+    struct segment_command_64 *cur_seg_cmd;
+    struct segment_command_64 *linkedit_segment = NULL;
     struct symtab_command *symtab_cmd = NULL;
     struct dysymtab_command *dysymtab_cmd = NULL;
 
-    uintptr_t cur = (uintptr_t)header + sizeof(mach_header_t);
+    uintptr_t cur = (uintptr_t)header + sizeof(struct mach_header_64);
     for (uint i = 0; i < header->ncmds; i++, cur += cur_seg_cmd->cmdsize) {
-        cur_seg_cmd = (segment_command_t *)cur;
+        cur_seg_cmd = (struct segment_command_64 *)cur;
         if (cur_seg_cmd->cmd == LC_SEGMENT_ARCH_DEPENDENT) {
             if (strcmp(cur_seg_cmd->segname, SEG_LINKEDIT) == 0) {
                 linkedit_segment = cur_seg_cmd;
@@ -116,18 +121,18 @@ static void rebind_symbols_for_image(struct rebindings_entry *rebindings,
         !dysymtab_cmd->nindirectsyms) return;
 
     uintptr_t linkedit_base = (uintptr_t)slide + linkedit_segment->vmaddr - linkedit_segment->fileoff;
-    nlist_t *symtab = (nlist_t *)(linkedit_base + symtab_cmd->symoff);
+    struct nlist_64 *symtab = (struct nlist_64 *)(linkedit_base + symtab_cmd->symoff);
     char *strtab = (char *)(linkedit_base + symtab_cmd->stroff);
     uint32_t *indirect_symtab = (uint32_t *)(linkedit_base + dysymtab_cmd->indirectsymoff);
 
-    cur = (uintptr_t)header + sizeof(mach_header_t);
+    cur = (uintptr_t)header + sizeof(struct mach_header_64);
     for (uint i = 0; i < header->ncmds; i++, cur += cur_seg_cmd->cmdsize) {
-        cur_seg_cmd = (segment_command_t *)cur;
+        cur_seg_cmd = (struct segment_command_64 *)cur;
         if (cur_seg_cmd->cmd == LC_SEGMENT_ARCH_DEPENDENT) {
             if (strcmp(cur_seg_cmd->segname, SEG_DATA) != 0 &&
                 strcmp(cur_seg_cmd->segname, SEG_DATA_CONST) != 0) continue;
             for (uint j = 0; j < cur_seg_cmd->nsects; j++) {
-                section_t *sect = (section_t *)(cur + sizeof(segment_command_t)) + j;
+                struct section_64 *sect = (struct section_64 *)(cur + sizeof(struct segment_command_64)) + j;
                 if ((sect->flags & SECTION_TYPE) == S_LAZY_SYMBOL_POINTERS ||
                     (sect->flags & SECTION_TYPE) == S_NON_LAZY_SYMBOL_POINTERS) {
                     perform_rebinding_with_section(rebindings, sect, slide, symtab, strtab, indirect_symtab);
