@@ -5,7 +5,6 @@
 #import <CoreTelephony/CTTelephonyNetworkInfo.h>
 #import <CoreTelephony/CTCarrier.h>
 
-// 收藏结构：name(必填), lat, lon, mcc, mnc, lac, cid
 @interface LocationFavoritesVC : UIViewController <UITableViewDelegate, UITableViewDataSource, CLLocationManagerDelegate>
 @property (nonatomic, strong) UISwitch *enableSwitch;
 @property (nonatomic, strong) UILabel *currentLocLabel;
@@ -15,7 +14,7 @@
 @property (nonatomic, strong) NSMutableArray *dataSource;
 @property (nonatomic, strong) CLLocationManager *locationManager;
 @property (nonatomic, copy) void (^realInfoCompletion)(CLLocationCoordinate2D coord, FakeBaseStation bs);
-- (void)startRealInfoFetch;   // 新增声明
+- (void)startRealInfoFetch;
 @end
 
 // ========== 静态变量 ==========
@@ -68,6 +67,20 @@ static void saveState() {
     [ud synchronize];
 }
 
+static void syncIndexWithCurrentCoordinate() {
+    NSArray *favList = [[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"] ?: @[];
+    selectedFavoriteIndex = -1;
+    for (NSInteger i = 0; i < favList.count; i++) {
+        NSDictionary *item = favList[i];
+        if (fabs([item[@"lat"] doubleValue] - fakedCoord.latitude) < 0.000001 &&
+            fabs([item[@"lon"] doubleValue] - fakedCoord.longitude) < 0.000001) {
+            selectedFavoriteIndex = i;
+            break;
+        }
+    }
+    saveState();
+}
+
 // ========== Hook CLLocation coordinate ==========
 static CLLocationCoordinate2D (*orig_coordinate)(id self, SEL _cmd);
 static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
@@ -114,13 +127,11 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
 
 + (void)install {
     loadState();
-    // Hook CLLocation coordinate
     Method coordMethod = class_getInstanceMethod([CLLocation class], @selector(coordinate));
     if (coordMethod) {
         orig_coordinate = (CLLocationCoordinate2D (*)(id, SEL))method_getImplementation(coordMethod);
         method_setImplementation(coordMethod, (IMP)replaced_coordinate);
     }
-    // Hook CTCarrier 基站相关
     Class ctc = NSClassFromString(@"CTCarrier");
     if (ctc) {
         Method mnc = class_getInstanceMethod(ctc, @selector(mobileNetworkCode));
@@ -145,7 +156,11 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
 + (void)setEnabled:(BOOL)en { enabled = en; saveState(); }
 
 + (CLLocationCoordinate2D)currentCoordinate { return fakedCoord; }
-+ (void)setCoordinate:(CLLocationCoordinate2D)coord { fakedCoord = coord; saveState(); }
++ (void)setCoordinate:(CLLocationCoordinate2D)coord {
+    fakedCoord = coord;
+    syncIndexWithCurrentCoordinate();
+    saveState();
+}
 
 + (void)setBaseStation:(FakeBaseStation)bs { fakedBS = bs; saveState(); }
 + (FakeBaseStation)currentBaseStation { return fakedBS; }
@@ -154,7 +169,11 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
 + (NSString *)currentName {
     NSArray *favs = [[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"] ?: @[];
     if (selectedFavoriteIndex >= 0 && selectedFavoriteIndex < favs.count) {
-        return favs[selectedFavoriteIndex][@"name"];
+        NSDictionary *item = favs[selectedFavoriteIndex];
+        if (fabs([item[@"lat"] doubleValue] - fakedCoord.latitude) < 0.000001 &&
+            fabs([item[@"lon"] doubleValue] - fakedCoord.longitude) < 0.000001) {
+            return item[@"name"];
+        }
     }
     return [NSString stringWithFormat:@"%.6f, %.6f", fakedCoord.latitude, fakedCoord.longitude];
 }
@@ -183,7 +202,6 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
 
 @end
 
-// ========== 收藏管理控制器 ==========
 @implementation LocationFavoritesVC
 
 - (void)viewDidLoad {
@@ -239,7 +257,7 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
     [self.view addSubview:_lonField];
     y += fieldH + 8;
     
-    // 基站信息 (MCC, MNC, LAC, CID)
+    // 基站信息
     NSArray *bsLabels = @[@"MCC", @"MNC", @"LAC", @"CID"];
     _mccField = [self createBSField]; _mncField = [self createBSField]; _lacField = [self createBSField]; _cidField = [self createBSField];
     NSArray *bsFields = @[_mccField, _mncField, _lacField, _cidField];
@@ -263,6 +281,7 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
     [fetchBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     fetchBtn.backgroundColor = [UIColor systemBlueColor]; fetchBtn.layer.cornerRadius = 6;
     [fetchBtn addTarget:self action:@selector(fetchRealInfo) forControlEvents:UIControlEventTouchUpInside];
+    fetchBtn.tag = 100; // 用于获取时修改标题
     [self.view addSubview:fetchBtn];
     y += 44;
     
@@ -276,7 +295,6 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
     [self.view addSubview:saveBtn];
     y += 44;
     
-    // 列表
     _tableView = [[UITableView alloc] initWithFrame:CGRectMake(margin, y, self.view.bounds.size.width - margin*2, self.view.bounds.size.height - y - 20) style:UITableViewStylePlain];
     _tableView.backgroundColor = [UIColor whiteColor]; _tableView.separatorColor = [UIColor lightGrayColor];
     _tableView.delegate = self; _tableView.dataSource = self; _tableView.rowHeight = 50;
@@ -301,6 +319,9 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
 }
 
 - (void)fetchRealInfo {
+    UIButton *btn = (UIButton *)[self.view viewWithTag:100];
+    btn.enabled = NO;
+    [btn setTitle:@"获取中…" forState:UIControlStateNormal];
     __weak typeof(self) weakSelf = self;
     self.realInfoCompletion = ^(CLLocationCoordinate2D coord, FakeBaseStation bs) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
@@ -313,6 +334,9 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
             strongSelf.lacField.text = [NSString stringWithFormat:@"%ld", (long)bs.lac];
             strongSelf.cidField.text = [NSString stringWithFormat:@"%ld", (long)bs.cid];
         }
+        UIButton *b = (UIButton *)[strongSelf.view viewWithTag:100];
+        b.enabled = YES;
+        [b setTitle:@"一键获取真实位置和基站" forState:UIControlStateNormal];
     };
     [self startRealInfoFetch];
 }
@@ -324,7 +348,6 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
         CTTelephonyNetworkInfo *info = [[CTTelephonyNetworkInfo alloc] init];
         CTCarrier *carrier = nil;
         if (@available(iOS 12.0, *)) {
-            // 使用新API获取默认数据服务的carrier
             NSString *service = info.dataServiceIdentifier ?: [info.serviceSubscriberCellularProviders.allKeys firstObject];
             if (service) {
                 carrier = info.serviceSubscriberCellularProviders[service];
@@ -338,8 +361,7 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
         FakeBaseStation bs;
         bs.mcc = carrier ? [carrier.mobileCountryCode integerValue] : 0;
         bs.mnc = carrier ? [carrier.mobileNetworkCode integerValue] : 0;
-        bs.lac = 0; // 无法直接获取
-        bs.cid = 0;
+        bs.lac = 0; bs.cid = 0;
         bs.hasBaseStation = (carrier != nil);
         self.realInfoCompletion(loc.coordinate, bs);
         self.realInfoCompletion = nil;
@@ -379,7 +401,9 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
         bs.hasBaseStation = NO;
         [LocationFaker setBaseStation:bs];
     }
-    [LocationFaker setEnabled:_enableSwitch.on];
+    // 强制打开定位
+    [LocationFaker setEnabled:YES];
+    _enableSwitch.on = YES;
 }
 
 - (void)addNewFavorite {
@@ -473,14 +497,20 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath { return YES; }
 - (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath {
     if (editingStyle == UITableViewCellEditingStyleDelete) {
-        [self.dataSource removeObjectAtIndex:indexPath.row];
+        NSInteger deletedIndex = indexPath.row;
+        BOOL isSelected = (deletedIndex == [LocationFaker selectedFavoriteIndex]);
+        [self.dataSource removeObjectAtIndex:deletedIndex];
         [[NSUserDefaults standardUserDefaults] setObject:self.dataSource forKey:@"locationFavorites"];
         [[NSUserDefaults standardUserDefaults] synchronize];
         [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
-        if (indexPath.row == [LocationFaker selectedFavoriteIndex]) {
+
+        if (isSelected) {
             [LocationFaker setCoordinate:CLLocationCoordinate2DMake(0, 0)];
             [LocationFaker setBaseStation:(FakeBaseStation){0,0,0,0, NO}];
+            [LocationFaker setEnabled:NO];
         }
+        // 重新同步索引，确保 selectedFavoriteIndex 正确
+        [LocationFaker setCoordinate:[LocationFaker currentCoordinate]];
     }
 }
 @end
