@@ -3,7 +3,7 @@
 #import "LocationFaker.h"
 
 @interface FloatView : UIView
-@property (nonatomic, weak) UILabel *roundLabel;
+@property (nonatomic, weak) UILabel *locNameLabel;   // 定位名称
 @property (nonatomic, weak) UILabel *badgeLabel;
 @property (nonatomic, assign) BOOL isEditing;
 @end
@@ -16,14 +16,16 @@
         self.layer.cornerRadius = frame.size.width / 2;
         self.clipsToBounds = YES;
         
-        UILabel *rLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 4, frame.size.width, 14)];
-        rLabel.textAlignment = NSTextAlignmentCenter;
-        rLabel.textColor = [UIColor whiteColor];
-        rLabel.font = [UIFont systemFontOfSize:10];
-        rLabel.text = @"";
-        [self addSubview:rLabel];
-        _roundLabel = rLabel;
+        // 上方小字：定位名称
+        UILabel *locLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 4, frame.size.width, 14)];
+        locLabel.textAlignment = NSTextAlignmentCenter;
+        locLabel.textColor = [UIColor whiteColor];
+        locLabel.font = [UIFont systemFontOfSize:10];
+        locLabel.text = @"";
+        [self addSubview:locLabel];
+        _locNameLabel = locLabel;
         
+        // 下方进度数字
         UILabel *badge = [[UILabel alloc] initWithFrame:CGRectMake(0, 18, frame.size.width, 28)];
         badge.textAlignment = NSTextAlignmentCenter;
         badge.textColor = [UIColor whiteColor];
@@ -82,13 +84,6 @@
     [UIApplication sharedApplication].idleTimerDisabled = YES;
     NSInteger displayIndex = mgr.currentIndex + 1;
     
-    if (mgr.needLogRoundStart && displayIndex == 1) {
-        [mgr switchToNextRound];
-        [mgr recordLogRoundStart];
-        mgr.needLogRoundStart = NO;
-        [mgr saveToFile];
-    }
-    
     NSDictionary *acc = mgr.accounts[mgr.currentIndex % total];
     NSString *account = acc[@"account"], *password = acc[@"password"];
     mgr.currentAccount = account;
@@ -102,11 +97,8 @@
     [[FloatWindow shared] updateBadge];
     
     if (mgr.currentIndex == 0) {
-        [mgr finishRound];
-        mgr.needLogRoundStart = YES;
         if (mgr.autoLock) mgr.tapLocked = YES;
         [mgr saveToFile];
-        [[FloatWindow shared] updateBadge];
         
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((mgr.pasteDelay + mgr.passwordDelay + 2.0) * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
@@ -164,7 +156,7 @@
     
     AccountManager *mgr = [AccountManager shared];
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 580;
+    CGFloat panelH = 480;  // 高度微调，保持紧凑
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -206,13 +198,6 @@
     [panel addSubview:hintLabel];
     yPos += 32;
     
-    // A轮名 / B轮名
-    [self addLabel:@"A轮名" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
-    [self addTextField:3000 value:mgr.roundAName frameX:leftMargin+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
-    [self addLabel:@"B轮名" frameX:secondColX y:yPos w:labelWidth toPanel:panel];
-    [self addTextField:3001 value:mgr.roundBName frameX:secondColX+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
-    yPos += 34;
-    
     // 服务器地址
     [self addLabel:@"服务器地址" frameX:leftMargin y:yPos w:70 toPanel:panel];
     [self addTextField:3003 value:mgr.serverURL frameX:leftMargin+75 y:yPos-2 w:panelW-120 toPanel:panel];
@@ -244,7 +229,7 @@
     [panel addSubview:goBtn];
     yPos += 36;
     
-    // 虚拟定位区域（简化为按钮+标签，无开关）
+    // 虚拟定位区域（按钮 + 标签）
     UIView *locLine = [[UIView alloc] initWithFrame:CGRectMake(leftMargin, yPos, panelW-30, 0.5)];
     locLine.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:locLine];
     yPos += 8;
@@ -301,14 +286,12 @@
     [panel addSubview:saveBtn];
     yPos += 40;
     
-    // 轮次信息
-    NSDateFormatter *fmt = [[NSDateFormatter alloc] init]; fmt.dateFormat = @"HH:mm";
-    BOOL isFinished = (mgr.currentIndex == 0 && mgr.accounts.count > 0 && mgr.roundEndTime != nil);
-    NSString *status = isFinished ? @"已完成" : @"进行中";
-    NSString *info = [NSString stringWithFormat:@"【%@】%@，启动：%@", [mgr currentRoundName], status, [fmt stringFromDate:mgr.roundStartTime]];
-    if (isFinished && mgr.roundEndTime) info = [info stringByAppendingFormat:@"，结束：%@", [fmt stringFromDate:mgr.roundEndTime]];
+    // 定位状态信息（替换原轮次信息）
     UILabel *infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 18)];
-    infoLabel.text = info; infoLabel.font = [UIFont boldSystemFontOfSize:13]; infoLabel.textColor = [UIColor darkGrayColor]; infoLabel.tag = 4000;
+    infoLabel.text = [LocationFaker isEnabled] ? @"【定位】进行中" : @"【定位】未启用";
+    infoLabel.font = [UIFont boldSystemFontOfSize:13];
+    infoLabel.textColor = [UIColor darkGrayColor];
+    infoLabel.tag = 4000;
     [panel addSubview:infoLabel];
     yPos += 22;
     
@@ -363,9 +346,14 @@
         if (locLabel) {
             locLabel.text = [LocationFaker isEnabled] ? [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]] : @"当前未启用";
         }
+        UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
+        if (infoLabel) {
+            infoLabel.text = [LocationFaker isEnabled] ? @"【定位】进行中" : @"【定位】未启用";
+        }
         locationWindow.hidden = YES;
         locationWindow = nil;
         [[NSNotificationCenter defaultCenter] removeObserver:self name:@"LocationFavoritesDismissed" object:nil];
+        [[FloatWindow shared] updateBadge];
     }];
 }
 
@@ -384,15 +372,7 @@
     if (targetLine < 1) targetLine = 1;
     if (targetLine > total) targetLine = total;
     
-    if (targetLine == total) {
-        mgr.currentIndex = 0;
-        mgr.roundEndTime = [NSDate date];
-        mgr.needLogRoundStart = YES;
-    } else {
-        mgr.currentIndex = targetLine;
-        mgr.roundEndTime = nil;
-        mgr.needLogRoundStart = NO;
-    }
+    mgr.currentIndex = targetLine == total ? 0 : targetLine;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     [FloatWindow showToast:[NSString stringWithFormat:@"已跳转到第 %ld 行", (long)targetLine]];
@@ -418,12 +398,6 @@
     mgr.autoLock = ((UISwitch *)[panel viewWithTag:2004]).on;
     mgr.detailedLog = ((UISwitch *)[panel viewWithTag:3005]).on;
     
-    // 不再处理定位开关，定位状态完全由 LocationFaker 管理
-    
-    UITextField *rATF = (UITextField *)[panel viewWithTag:3000];
-    if (rATF.text.length > 0) mgr.roundAName = rATF.text;
-    UITextField *rBTF = (UITextField *)[panel viewWithTag:3001];
-    if (rBTF.text.length > 0) mgr.roundBName = rBTF.text;
     mgr.serverURL = [(UITextField *)[panel viewWithTag:3003] text] ?: mgr.serverURL;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
@@ -540,7 +514,7 @@
     NSInteger total = mgr.accounts.count;
     if (total > 0) {
         NSString *progressText;
-        if (mgr.currentIndex == 0 && mgr.roundEndTime != nil) {
+        if (mgr.currentIndex == 0 && total > 0) {
             progressText = [NSString stringWithFormat:@"%ld/%ld", (long)total, (long)total];
         } else {
             progressText = [NSString stringWithFormat:@"%ld/%ld", (long)mgr.currentIndex, (long)total];
@@ -549,7 +523,7 @@
     } else {
         _floatView.badgeLabel.text = @"0/0";
     }
-    _floatView.roundLabel.text = [mgr currentRoundName];
+    _floatView.locNameLabel.text = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
 }
 
 + (void)showToast:(NSString *)message {
