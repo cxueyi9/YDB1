@@ -4,6 +4,8 @@
 #import <objc/runtime.h>
 
 @interface LocationFavoritesVC : UIViewController <UITableViewDelegate, UITableViewDataSource>
+@property (nonatomic, strong) UISwitch *enableSwitch;
+@property (nonatomic, strong) UILabel *currentLocLabel;
 @property (nonatomic, strong) UITextField *nameField, *latField, *lonField, *noteField;
 @property (nonatomic, strong) UITableView *tableView;
 @property (nonatomic, strong) NSMutableArray *dataSource;
@@ -12,9 +14,8 @@
 // ========== 静态变量 ==========
 static BOOL enabled = NO;
 static CLLocationCoordinate2D fakedCoord = {37.3349, -122.0093};
-static NSInteger selectedFavoriteIndex = -1; // -1 表示无匹配
+static NSInteger selectedFavoriteIndex = -1;
 
-// 持久化键
 static NSString * const kEnabledKey = @"LocationFakerEnabled";
 static NSString * const kLatitudeKey = @"LocationFakerLatitude";
 static NSString * const kLongitudeKey = @"LocationFakerLongitude";
@@ -22,28 +23,14 @@ static NSString * const kSelectedIndexKey = @"LocationFakerSelectedIndex";
 
 static void loadState() {
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    if ([ud objectForKey:kEnabledKey]) {
-        enabled = [ud boolForKey:kEnabledKey];
-    }
+    if ([ud objectForKey:kEnabledKey]) enabled = [ud boolForKey:kEnabledKey];
     if ([ud objectForKey:kLatitudeKey] && [ud objectForKey:kLongitudeKey]) {
         fakedCoord = CLLocationCoordinate2DMake([ud doubleForKey:kLatitudeKey], [ud doubleForKey:kLongitudeKey]);
     }
     if ([ud objectForKey:kSelectedIndexKey]) {
         selectedFavoriteIndex = [ud integerForKey:kSelectedIndexKey];
-        // 校验索引有效性：如果索引超出当前收藏数量或坐标不匹配，则设为 -1
         NSArray *favs = [LocationFaker favoriteNames];
-        if (selectedFavoriteIndex >= 0 && selectedFavoriteIndex < favs.count) {
-            // 进一步验证坐标是否匹配
-            NSArray *favList = [[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"] ?: @[];
-            NSDictionary *item = favList[selectedFavoriteIndex];
-            double lat = [item[@"lat"] doubleValue];
-            double lon = [item[@"lon"] doubleValue];
-            if (fabs(lat - fakedCoord.latitude) > 0.000001 || fabs(lon - fakedCoord.longitude) > 0.000001) {
-                selectedFavoriteIndex = -1; // 坐标已变，清除选择
-            }
-        } else {
-            selectedFavoriteIndex = -1;
-        }
+        if (selectedFavoriteIndex < 0 || selectedFavoriteIndex >= favs.count) selectedFavoriteIndex = -1;
     }
 }
 
@@ -56,15 +43,13 @@ static void saveState() {
     [ud synchronize];
 }
 
-// 同步索引：根据当前坐标在收藏列表中查找匹配项，更新 selectedFavoriteIndex
 static void syncIndexWithCurrentCoordinate() {
     NSArray *favList = [[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"] ?: @[];
     selectedFavoriteIndex = -1;
     for (NSInteger i = 0; i < favList.count; i++) {
         NSDictionary *item = favList[i];
-        double lat = [item[@"lat"] doubleValue];
-        double lon = [item[@"lon"] doubleValue];
-        if (fabs(lat - fakedCoord.latitude) < 0.000001 && fabs(lon - fakedCoord.longitude) < 0.000001) {
+        if (fabs([item[@"lat"] doubleValue] - fakedCoord.latitude) < 0.000001 &&
+            fabs([item[@"lon"] doubleValue] - fakedCoord.longitude) < 0.000001) {
             selectedFavoriteIndex = i;
             break;
         }
@@ -72,7 +57,7 @@ static void syncIndexWithCurrentCoordinate() {
     saveState();
 }
 
-// ========== Hook ==========
+// Hook
 static CLLocationCoordinate2D (*orig_coordinate)(id self, SEL _cmd);
 static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
     if (enabled) {
@@ -81,8 +66,7 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
             [FloatWindow showToast:[NSString stringWithFormat:@"定位已伪装 %@", name]];
         });
         if ([AccountManager shared].detailedLog) {
-            NSString *msg = [NSString stringWithFormat:@"【定位伪装】%@", name];
-            [[AccountManager shared] appendLog:msg];
+            [[AccountManager shared] appendLog:[NSString stringWithFormat:@"【定位伪装】%@", name]];
         }
         return fakedCoord;
     }
@@ -101,31 +85,23 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
 }
 
 + (BOOL)isEnabled { return enabled; }
-+ (void)setEnabled:(BOOL)en {
-    enabled = en;
-    saveState();
-}
++ (void)setEnabled:(BOOL)en { enabled = en; saveState(); }
 
 + (CLLocationCoordinate2D)currentCoordinate { return fakedCoord; }
 + (void)setCoordinate:(CLLocationCoordinate2D)coord {
     fakedCoord = coord;
-    syncIndexWithCurrentCoordinate(); // 更新选中索引
+    syncIndexWithCurrentCoordinate();
     saveState();
 }
 
 + (NSString *)currentName {
-    if (selectedFavoriteIndex >= 0) {
-        NSArray *favList = [[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"] ?: @[];
-        if (selectedFavoriteIndex < favList.count) {
-            NSDictionary *item = favList[selectedFavoriteIndex];
-            double lat = [item[@"lat"] doubleValue];
-            double lon = [item[@"lon"] doubleValue];
-            if (fabs(lat - fakedCoord.latitude) < 0.000001 && fabs(lon - fakedCoord.longitude) < 0.000001) {
-                return item[@"name"] ?: @"未知";
-            }
+    NSArray *favList = [[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"] ?: @[];
+    if (selectedFavoriteIndex >= 0 && selectedFavoriteIndex < favList.count) {
+        NSDictionary *item = favList[selectedFavoriteIndex];
+        if (fabs([item[@"lat"] doubleValue] - fakedCoord.latitude) < 0.000001 &&
+            fabs([item[@"lon"] doubleValue] - fakedCoord.longitude) < 0.000001) {
+            return item[@"name"];
         }
-        selectedFavoriteIndex = -1; // 数据不一致，重置
-        saveState();
     }
     return [NSString stringWithFormat:@"%.6f, %.6f", fakedCoord.latitude, fakedCoord.longitude];
 }
@@ -133,9 +109,7 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
 + (NSArray *)favoriteNames {
     NSArray *favList = [[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"] ?: @[];
     NSMutableArray *names = [NSMutableArray array];
-    for (NSDictionary *item in favList) {
-        [names addObject: item[@"name"] ?: @"未命名"];
-    }
+    for (NSDictionary *item in favList) [names addObject:item[@"name"] ?: @"未命名"];
     return names;
 }
 
@@ -149,70 +123,53 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
 
 @end
 
-// ========== 收藏管理控制器（已删除“应用坐标”按钮） ==========
+// ========== 收藏管理控制器（增加开关和标签） ==========
 @implementation LocationFavoritesVC
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"收藏坐标";
+    self.title = @"虚拟定位";
     self.view.backgroundColor = [UIColor whiteColor];
     self.dataSource = [NSMutableArray arrayWithArray:[[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"] ?: @[]];
     
     self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone
                                                                                           target:self
                                                                                           action:@selector(doneAction)];
-    
     CGFloat margin = 15;
     CGFloat y = 100;
-    CGFloat fieldH = 36;
-    CGFloat labelW = 60;
+    CGFloat fieldH = 30;
     
-    // 名称
-    UILabel *nameLabel = [[UILabel alloc] initWithFrame:CGRectMake(margin, y, labelW, fieldH)];
-    nameLabel.text = @"名称"; nameLabel.textColor = [UIColor blackColor];
-    [self.view addSubview:nameLabel];
-    _nameField = [[UITextField alloc] initWithFrame:CGRectMake(margin + labelW, y, self.view.bounds.size.width - margin*2 - labelW, fieldH)];
-    _nameField.placeholder = @"可选"; _nameField.borderStyle = UITextBorderStyleRoundedRect; _nameField.textColor = [UIColor blackColor];
-    [self.view addSubview:_nameField];
-    y += fieldH + 8;
+    // 启用开关
+    UILabel *enableLabel = [[UILabel alloc] initWithFrame:CGRectMake(margin, y, 50, fieldH)];
+    enableLabel.text = @"启用"; enableLabel.textColor = [UIColor blackColor];
+    [self.view addSubview:enableLabel];
+    _enableSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(margin + 55, y-2, 51, 31)];
+    _enableSwitch.on = [LocationFaker isEnabled];
+    [_enableSwitch addTarget:self action:@selector(switchChanged:) forControlEvents:UIControlEventValueChanged];
+    [self.view addSubview:_enableSwitch];
     
-    // 纬度/经度
-    UILabel *latLabel = [[UILabel alloc] initWithFrame:CGRectMake(margin, y, labelW, fieldH)];
-    latLabel.text = @"纬度"; latLabel.textColor = [UIColor blackColor];
-    [self.view addSubview:latLabel];
-    _latField = [[UITextField alloc] initWithFrame:CGRectMake(margin + labelW, y, (self.view.bounds.size.width - margin*2 - labelW - 10)/2, fieldH)];
-    _latField.placeholder = @"纬度"; _latField.borderStyle = UITextBorderStyleRoundedRect; _latField.keyboardType = UIKeyboardTypeDecimalPad; _latField.textColor = [UIColor blackColor];
-    [self.view addSubview:_latField];
+    // 当前定位标签
+    _currentLocLabel = [[UILabel alloc] initWithFrame:CGRectMake(margin + 120, y, self.view.bounds.size.width - margin - 120 - margin, fieldH)];
+    _currentLocLabel.text = [NSString stringWithFormat:@"当前: %@", [LocationFaker currentName]];
+    _currentLocLabel.font = [UIFont systemFontOfSize:13];
+    _currentLocLabel.textColor = [UIColor darkGrayColor];
+    [self.view addSubview:_currentLocLabel];
+    y += fieldH + 15;
     
-    _lonField = [[UITextField alloc] initWithFrame:CGRectMake(margin + labelW + (self.view.bounds.size.width - margin*2 - labelW - 10)/2 + 10, y, (self.view.bounds.size.width - margin*2 - labelW - 10)/2, fieldH)];
-    _lonField.placeholder = @"经度"; _lonField.borderStyle = UITextBorderStyleRoundedRect; _lonField.keyboardType = UIKeyboardTypeDecimalPad; _lonField.textColor = [UIColor blackColor];
-    [self.view addSubview:_lonField];
-    y += fieldH + 8;
-    
-    // 备注
-    UILabel *noteLabel = [[UILabel alloc] initWithFrame:CGRectMake(margin, y, labelW, fieldH)];
-    noteLabel.text = @"备注"; noteLabel.textColor = [UIColor blackColor];
-    [self.view addSubview:noteLabel];
-    _noteField = [[UITextField alloc] initWithFrame:CGRectMake(margin + labelW, y, self.view.bounds.size.width - margin*2 - labelW, fieldH)];
-    _noteField.placeholder = @"可选"; _noteField.borderStyle = UITextBorderStyleRoundedRect; _noteField.textColor = [UIColor blackColor];
-    [self.view addSubview:_noteField];
-    y += fieldH + 12;
-    
-    // 只保留“收藏当前”按钮
-    UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    saveBtn.frame = CGRectMake(margin, y, self.view.bounds.size.width - margin*2, 36);
-    [saveBtn setTitle:@"收藏当前" forState:UIControlStateNormal];
-    [saveBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    saveBtn.backgroundColor = [UIColor systemGreenColor]; saveBtn.layer.cornerRadius = 6;
-    [saveBtn addTarget:self action:@selector(saveFavorite) forControlEvents:UIControlEventTouchUpInside];
-    [self.view addSubview:saveBtn];
-    y += 44;
-    
-    // 收藏列表（选择后直接应用坐标并关闭页面）
+    // 收藏列表（占据下方空间）
     _tableView = [[UITableView alloc] initWithFrame:CGRectMake(margin, y, self.view.bounds.size.width - margin*2, self.view.bounds.size.height - y - 20) style:UITableViewStylePlain];
-    _tableView.backgroundColor = [UIColor whiteColor]; _tableView.separatorColor = [UIColor lightGrayColor];
-    _tableView.delegate = self; _tableView.dataSource = self; _tableView.rowHeight = 50;
+    _tableView.backgroundColor = [UIColor whiteColor];
+    _tableView.separatorColor = [UIColor lightGrayColor];
+    _tableView.delegate = self;
+    _tableView.dataSource = self;
+    _tableView.rowHeight = 50;
     [self.view addSubview:_tableView];
+    
+    // 不再需要输入框和按钮，列表选择即可
+}
+
+- (void)switchChanged:(UISwitch *)sender {
+    [LocationFaker setEnabled:sender.on];
 }
 
 - (void)doneAction {
@@ -220,22 +177,9 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
     [[NSNotificationCenter defaultCenter] postNotificationName:@"LocationFavoritesDismissed" object:nil];
 }
 
-- (void)saveFavorite {
-    double lat = [_latField.text doubleValue];
-    double lon = [_lonField.text doubleValue];
-    if (lat == 0 && lon == 0) return;
-    NSString *name = _nameField.text.length ? _nameField.text : [NSString stringWithFormat:@"%.4f,%.4f", lat, lon];
-    NSString *note = _noteField.text ?: @"";
-    NSDictionary *item = @{@"name": name, @"lat": @(lat), @"lon": @(lon), @"note": note};
-    [self.dataSource addObject:item];
-    [[NSUserDefaults standardUserDefaults] setObject:self.dataSource forKey:@"locationFavorites"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-    [_tableView reloadData];
-    _nameField.text = @""; _latField.text = @""; _lonField.text = @""; _noteField.text = @"";
-}
-
 #pragma mark - TableView
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return self.dataSource.count; }
+
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"Cell"];
     if (!cell) {
@@ -249,15 +193,20 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
     cell.detailTextLabel.text = item[@"note"] ?: @"";
     return cell;
 }
+
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     NSDictionary *item = self.dataSource[indexPath.row];
     double lat = [item[@"lat"] doubleValue], lon = [item[@"lon"] doubleValue];
     [LocationFaker setCoordinate:CLLocationCoordinate2DMake(lat, lon)];
     [LocationFaker setEnabled:YES];
-    // 关闭页面
+    // 更新界面
+    _enableSwitch.on = YES;
+    _currentLocLabel.text = [NSString stringWithFormat:@"当前: %@", item[@"name"]];
+    // 自动关闭
     [self doneAction];
 }
+
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath { return YES; }
 - (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath {
     if (editingStyle == UITableViewCellEditingStyleDelete) {
@@ -265,9 +214,8 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
         [[NSUserDefaults standardUserDefaults] setObject:self.dataSource forKey:@"locationFavorites"];
         [[NSUserDefaults standardUserDefaults] synchronize];
         [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
-        // 如果删除的是当前选中的定位，需要更新状态
         if (indexPath.row == [LocationFaker selectedFavoriteIndex]) {
-            [LocationFaker setCoordinate:CLLocationCoordinate2DMake(0, 0)]; // 无效坐标，将导致索引重置
+            [LocationFaker setCoordinate:CLLocationCoordinate2DMake(0, 0)];
         }
     }
 }

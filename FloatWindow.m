@@ -244,7 +244,7 @@
     [panel addSubview:goBtn];
     yPos += 36;
     
-    // 虚拟定位区域（修改后）
+    // 虚拟定位区域（简化为按钮+标签）
     UIView *locLine = [[UIView alloc] initWithFrame:CGRectMake(leftMargin, yPos, panelW-30, 0.5)];
     locLine.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:locLine];
     yPos += 8;
@@ -254,24 +254,24 @@
     [panel addSubview:locTitle];
     yPos += 22;
     
-    [self addLabel:@"启用" frameX:leftMargin y:yPos w:50 toPanel:panel];
-    UISwitch *locSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+55, yPos-5, 51, 31)];
-    locSwitch.on = [LocationFaker isEnabled]; locSwitch.tag = 3004;
-    [panel addSubview:locSwitch];
+    UIButton *locSettingBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    locSettingBtn.frame = CGRectMake(leftMargin, yPos, 100, 30);
+    [locSettingBtn setTitle:@"虚拟定位设置" forState:UIControlStateNormal];
+    locSettingBtn.titleLabel.font = [UIFont systemFontOfSize:12];
+    [locSettingBtn setTitleColor:[UIColor systemBlueColor] forState:UIControlStateNormal];
+    locSettingBtn.layer.borderWidth = 0.5;
+    locSettingBtn.layer.borderColor = [UIColor lightGrayColor].CGColor;
+    locSettingBtn.layer.cornerRadius = 6;
+    [locSettingBtn addTarget:self action:@selector(openLocationFavorites) forControlEvents:UIControlEventTouchUpInside];
+    [panel addSubview:locSettingBtn];
     
-    // 选择框按钮
-    UIButton *pickerBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    pickerBtn.frame = CGRectMake(secondColX, yPos-2, comboWidth, 26);
-    [pickerBtn setTitle:[LocationFaker currentName] forState:UIControlStateNormal];
-    pickerBtn.titleLabel.font = [UIFont systemFontOfSize:12];
-    pickerBtn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
-    pickerBtn.layer.borderWidth = 0.5;
-    pickerBtn.layer.borderColor = [UIColor lightGrayColor].CGColor;
-    pickerBtn.layer.cornerRadius = 4;
-    pickerBtn.tag = 3006;
-    [pickerBtn addTarget:self action:@selector(locationPickerTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [panel addSubview:pickerBtn];
-    yPos += 32;
+    UILabel *locLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin + 110, yPos, panelW - leftMargin - 110 - 15, 30)];
+    locLabel.text = [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]];
+    locLabel.font = [UIFont systemFontOfSize:12];
+    locLabel.textColor = [UIColor darkGrayColor];
+    locLabel.tag = 3007; // 用于更新
+    [panel addSubview:locLabel];
+    yPos += 36;
     
     // 详细日志
     [self addLabel:@"详细日志" frameX:leftMargin y:yPos w:70 toPanel:panel];
@@ -402,15 +402,12 @@ static UIWindow *locationWindow = nil;
                                                       object:nil
                                                        queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification *note) {
-        UIView *panel = [self settingsPanel];
-        UIButton *pickerBtn = (UIButton *)[panel viewWithTag:3006];
-        if (pickerBtn) {
-            [pickerBtn setTitle:[LocationFaker currentName] forState:UIControlStateNormal];
-        }
-        locationWindow.hidden = YES;
-        locationWindow = nil;
-        [[NSNotificationCenter defaultCenter] removeObserver:self name:@"LocationFavoritesDismissed" object:nil];
-    }];
+// 在 openLocationFavorites 的通知回调中，更新标签
+UIView *panel = [self settingsPanel];
+UILabel *locLabel = (UILabel *)[panel viewWithTag:3007];
+if (locLabel) {
+    locLabel.text = [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]];
+}
 }
 
 - (void)jumpAction:(UIButton *)sender {
