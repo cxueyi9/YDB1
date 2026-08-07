@@ -2,23 +2,35 @@
 #import "AccountManager.h"
 #import "FloatWindow.h"
 #import <objc/runtime.h>
+#import <CoreTelephony/CTTelephonyNetworkInfo.h>
+#import <CoreTelephony/CTCarrier.h>
 
-@interface LocationFavoritesVC : UIViewController <UITableViewDelegate, UITableViewDataSource>
+// 收藏结构：name(必填), lat, lon, mcc, mnc, lac, cid
+@interface LocationFavoritesVC : UIViewController <UITableViewDelegate, UITableViewDataSource, CLLocationManagerDelegate>
 @property (nonatomic, strong) UISwitch *enableSwitch;
 @property (nonatomic, strong) UILabel *currentLocLabel;
-@property (nonatomic, strong) UITextField *nameField, *latField, *lonField, *noteField;
+@property (nonatomic, strong) UITextField *nameField, *latField, *lonField;
+@property (nonatomic, strong) UITextField *mccField, *mncField, *lacField, *cidField;
 @property (nonatomic, strong) UITableView *tableView;
 @property (nonatomic, strong) NSMutableArray *dataSource;
+@property (nonatomic, strong) CLLocationManager *locationManager;
+@property (nonatomic, copy) void (^realInfoCompletion)(CLLocationCoordinate2D coord, FakeBaseStation bs);
 @end
 
 // ========== 静态变量 ==========
 static BOOL enabled = NO;
 static CLLocationCoordinate2D fakedCoord = {37.3349, -122.0093};
+static FakeBaseStation fakedBS = {0,0,0,0, NO};
 static NSInteger selectedFavoriteIndex = -1;
 
 static NSString * const kEnabledKey = @"LocationFakerEnabled";
 static NSString * const kLatitudeKey = @"LocationFakerLatitude";
 static NSString * const kLongitudeKey = @"LocationFakerLongitude";
+static NSString * const kMCCKey = @"LocationFakerMCC";
+static NSString * const kMNCKey = @"LocationFakerMNC";
+static NSString * const kLACKey = @"LocationFakerLAC";
+static NSString * const kCIDKey = @"LocationFakerCID";
+static NSString * const kHasBSKey = @"LocationFakerHasBS";
 static NSString * const kSelectedIndexKey = @"LocationFakerSelectedIndex";
 
 static void loadState() {
@@ -26,6 +38,13 @@ static void loadState() {
     if ([ud objectForKey:kEnabledKey]) enabled = [ud boolForKey:kEnabledKey];
     if ([ud objectForKey:kLatitudeKey] && [ud objectForKey:kLongitudeKey]) {
         fakedCoord = CLLocationCoordinate2DMake([ud doubleForKey:kLatitudeKey], [ud doubleForKey:kLongitudeKey]);
+    }
+    if ([ud objectForKey:kHasBSKey]) {
+        fakedBS.hasBaseStation = [ud boolForKey:kHasBSKey];
+        fakedBS.mcc = [ud integerForKey:kMCCKey];
+        fakedBS.mnc = [ud integerForKey:kMNCKey];
+        fakedBS.lac = [ud integerForKey:kLACKey];
+        fakedBS.cid = [ud integerForKey:kCIDKey];
     }
     if ([ud objectForKey:kSelectedIndexKey]) {
         selectedFavoriteIndex = [ud integerForKey:kSelectedIndexKey];
@@ -39,31 +58,23 @@ static void saveState() {
     [ud setBool:enabled forKey:kEnabledKey];
     [ud setDouble:fakedCoord.latitude forKey:kLatitudeKey];
     [ud setDouble:fakedCoord.longitude forKey:kLongitudeKey];
+    [ud setBool:fakedBS.hasBaseStation forKey:kHasBSKey];
+    [ud setInteger:fakedBS.mcc forKey:kMCCKey];
+    [ud setInteger:fakedBS.mnc forKey:kMNCKey];
+    [ud setInteger:fakedBS.lac forKey:kLACKey];
+    [ud setInteger:fakedBS.cid forKey:kCIDKey];
     [ud setInteger:selectedFavoriteIndex forKey:kSelectedIndexKey];
     [ud synchronize];
 }
 
-static void syncIndexWithCurrentCoordinate() {
-    NSArray *favList = [[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"] ?: @[];
-    selectedFavoriteIndex = -1;
-    for (NSInteger i = 0; i < favList.count; i++) {
-        NSDictionary *item = favList[i];
-        if (fabs([item[@"lat"] doubleValue] - fakedCoord.latitude) < 0.000001 &&
-            fabs([item[@"lon"] doubleValue] - fakedCoord.longitude) < 0.000001) {
-            selectedFavoriteIndex = i;
-            break;
-        }
-    }
-    saveState();
-}
-
-// Hook
+// ========== Hook CLLocation coordinate ==========
 static CLLocationCoordinate2D (*orig_coordinate)(id self, SEL _cmd);
 static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
     if (enabled) {
         NSString *name = [LocationFaker currentName];
+        NSString *hint = fakedBS.hasBaseStation ? @"基站信息已伪装" : @"GPS定位已伪装";
         dispatch_async(dispatch_get_main_queue(), ^{
-            [FloatWindow showToast:[NSString stringWithFormat:@"定位已伪装 %@", name]];
+            [FloatWindow showToast:[NSString stringWithFormat:@"%@ %@", hint, name]];
         });
         if ([AccountManager shared].detailedLog) {
             [[AccountManager shared] appendLog:[NSString stringWithFormat:@"【定位伪装】%@", name]];
@@ -73,14 +84,59 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
     return orig_coordinate(self, _cmd);
 }
 
+// ========== Hook CoreTelephony 基站信息 ==========
+static NSString* (*orig_mobileNetworkCode)(id self, SEL _cmd);
+static NSString* replaced_mobileNetworkCode(id self, SEL _cmd) {
+    if (enabled && fakedBS.hasBaseStation) {
+        return [NSString stringWithFormat:@"%02ld", (long)fakedBS.mnc];
+    }
+    return orig_mobileNetworkCode(self, _cmd);
+}
+
+static NSString* (*orig_mobileCountryCode)(id self, SEL _cmd);
+static NSString* replaced_mobileCountryCode(id self, SEL _cmd) {
+    if (enabled && fakedBS.hasBaseStation) {
+        return [NSString stringWithFormat:@"%03ld", (long)fakedBS.mcc];
+    }
+    return orig_mobileCountryCode(self, _cmd);
+}
+
+static NSString* (*orig_isoCountryCode)(id self, SEL _cmd);
+static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
+    if (enabled && fakedBS.hasBaseStation) {
+        return @"cn";  // 简单伪装
+    }
+    return orig_isoCountryCode(self, _cmd);
+}
+
 @implementation LocationFaker
 
 + (void)install {
     loadState();
-    Method orig = class_getInstanceMethod([CLLocation class], @selector(coordinate));
-    if (orig) {
-        orig_coordinate = (CLLocationCoordinate2D (*)(id, SEL))method_getImplementation(orig);
-        method_setImplementation(orig, (IMP)replaced_coordinate);
+    // Hook CLLocation coordinate
+    Method coordMethod = class_getInstanceMethod([CLLocation class], @selector(coordinate));
+    if (coordMethod) {
+        orig_coordinate = (CLLocationCoordinate2D (*)(id, SEL))method_getImplementation(coordMethod);
+        method_setImplementation(coordMethod, (IMP)replaced_coordinate);
+    }
+    // Hook CTCarrier 基站相关
+    Class ctc = NSClassFromString(@"CTCarrier");
+    if (ctc) {
+        Method mnc = class_getInstanceMethod(ctc, @selector(mobileNetworkCode));
+        if (mnc) {
+            orig_mobileNetworkCode = (NSString* (*)(id, SEL))method_getImplementation(mnc);
+            method_setImplementation(mnc, (IMP)replaced_mobileNetworkCode);
+        }
+        Method mcc = class_getInstanceMethod(ctc, @selector(mobileCountryCode));
+        if (mcc) {
+            orig_mobileCountryCode = (NSString* (*)(id, SEL))method_getImplementation(mcc);
+            method_setImplementation(mcc, (IMP)replaced_mobileCountryCode);
+        }
+        Method iso = class_getInstanceMethod(ctc, @selector(isoCountryCode));
+        if (iso) {
+            orig_isoCountryCode = (NSString* (*)(id, SEL))method_getImplementation(iso);
+            method_setImplementation(iso, (IMP)replaced_isoCountryCode);
+        }
     }
 }
 
@@ -88,28 +144,24 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
 + (void)setEnabled:(BOOL)en { enabled = en; saveState(); }
 
 + (CLLocationCoordinate2D)currentCoordinate { return fakedCoord; }
-+ (void)setCoordinate:(CLLocationCoordinate2D)coord {
-    fakedCoord = coord;
-    syncIndexWithCurrentCoordinate();
-    saveState();
-}
++ (void)setCoordinate:(CLLocationCoordinate2D)coord { fakedCoord = coord; saveState(); }
+
++ (void)setBaseStation:(FakeBaseStation)bs { fakedBS = bs; saveState(); }
++ (FakeBaseStation)currentBaseStation { return fakedBS; }
++ (BOOL)hasBaseStation { return fakedBS.hasBaseStation; }
 
 + (NSString *)currentName {
-    NSArray *favList = [[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"] ?: @[];
-    if (selectedFavoriteIndex >= 0 && selectedFavoriteIndex < favList.count) {
-        NSDictionary *item = favList[selectedFavoriteIndex];
-        if (fabs([item[@"lat"] doubleValue] - fakedCoord.latitude) < 0.000001 &&
-            fabs([item[@"lon"] doubleValue] - fakedCoord.longitude) < 0.000001) {
-            return item[@"name"];
-        }
+    NSArray *favs = [[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"] ?: @[];
+    if (selectedFavoriteIndex >= 0 && selectedFavoriteIndex < favs.count) {
+        return favs[selectedFavoriteIndex][@"name"];
     }
     return [NSString stringWithFormat:@"%.6f, %.6f", fakedCoord.latitude, fakedCoord.longitude];
 }
 
 + (NSArray *)favoriteNames {
-    NSArray *favList = [[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"] ?: @[];
+    NSArray *favs = [[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"] ?: @[];
     NSMutableArray *names = [NSMutableArray array];
-    for (NSDictionary *item in favList) [names addObject:item[@"name"] ?: @"未命名"];
+    for (NSDictionary *item in favs) [names addObject:item[@"name"] ?: @"未命名"];
     return names;
 }
 
@@ -119,6 +171,16 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
     LocationFavoritesVC *vc = [[LocationFavoritesVC alloc] init];
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
     return nav;
+}
+
++ (void)requestRealLocationAndBaseStationWithCompletion:(void(^)(CLLocationCoordinate2D coord, FakeBaseStation bs))completion {
+    // 通过 LocationFavoritesVC 中的 locationManager 实现
+    LocationFavoritesVC *vc = [[LocationFavoritesVC alloc] init];
+    vc.realInfoCompletion = completion;
+    // 启动定位并获取基站
+    [vc startRealInfoFetch];
+    // 由于 vc 未显示，需确保异步回调正常，可临时持有 vc
+    objc_setAssociatedObject([NSNull null], "RealInfoVC", vc, OBJC_ASSOCIATION_RETAIN);
 }
 
 @end
@@ -140,131 +202,227 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
                                                                                            action:@selector(addNewFavorite)];
     
     CGFloat margin = 15;
-    CGFloat y = 100;
-    CGFloat fieldH = 30;
-    CGFloat labelW = 60;
+    CGFloat y = 100, fieldH = 30, labelW = 50;
     
     // 启用开关
-    UILabel *enableLabel = [[UILabel alloc] initWithFrame:CGRectMake(margin, y, 50, fieldH)];
-    enableLabel.text = @"启用"; enableLabel.textColor = [UIColor blackColor];
-    [self.view addSubview:enableLabel];
-    _enableSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(margin + 55, y-2, 51, 31)];
+    UILabel *enLb = [[UILabel alloc] initWithFrame:CGRectMake(margin, y, labelW, fieldH)];
+    enLb.text = @"启用"; enLb.textColor = [UIColor blackColor];
+    [self.view addSubview:enLb];
+    _enableSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(margin+labelW+5, y-2, 51, 31)];
     _enableSwitch.on = [LocationFaker isEnabled];
     [self.view addSubview:_enableSwitch];
     
-    _currentLocLabel = [[UILabel alloc] initWithFrame:CGRectMake(margin + 120, y, self.view.bounds.size.width - margin - 120 - margin, fieldH)];
+    _currentLocLabel = [[UILabel alloc] initWithFrame:CGRectMake(margin+labelW+70, y, self.view.bounds.size.width - margin*2 - labelW - 70, fieldH)];
     _currentLocLabel.text = [NSString stringWithFormat:@"当前: %@", [LocationFaker currentName]];
     _currentLocLabel.font = [UIFont systemFontOfSize:13];
     _currentLocLabel.textColor = [UIColor darkGrayColor];
     [self.view addSubview:_currentLocLabel];
     y += fieldH + 15;
     
-    // 名称
+    // 名称（必填）
     UILabel *nameLb = [[UILabel alloc] initWithFrame:CGRectMake(margin, y, labelW, fieldH)];
-    nameLb.text = @"名称"; nameLb.textColor = [UIColor blackColor];
+    nameLb.text = @"名称*"; nameLb.textColor = [UIColor redColor];
     [self.view addSubview:nameLb];
     _nameField = [[UITextField alloc] initWithFrame:CGRectMake(margin+labelW, y, self.view.bounds.size.width - margin*2 - labelW, fieldH)];
-    _nameField.placeholder = @"可选"; _nameField.borderStyle = UITextBorderStyleRoundedRect; _nameField.textColor = [UIColor blackColor];
+    _nameField.placeholder = @"必填"; _nameField.borderStyle = UITextBorderStyleRoundedRect; _nameField.textColor = [UIColor blackColor];
     [self.view addSubview:_nameField];
     y += fieldH + 8;
     
-    // 纬度 / 经度
+    // 纬度/经度
     UILabel *latLb = [[UILabel alloc] initWithFrame:CGRectMake(margin, y, labelW, fieldH)];
     latLb.text = @"纬度"; latLb.textColor = [UIColor blackColor];
     [self.view addSubview:latLb];
     _latField = [[UITextField alloc] initWithFrame:CGRectMake(margin+labelW, y, (self.view.bounds.size.width - margin*2 - labelW - 10)/2, fieldH)];
     _latField.placeholder = @"纬度"; _latField.borderStyle = UITextBorderStyleRoundedRect; _latField.keyboardType = UIKeyboardTypeDecimalPad; _latField.textColor = [UIColor blackColor];
     [self.view addSubview:_latField];
+    
     _lonField = [[UITextField alloc] initWithFrame:CGRectMake(margin+labelW + (self.view.bounds.size.width - margin*2 - labelW - 10)/2 + 10, y, (self.view.bounds.size.width - margin*2 - labelW - 10)/2, fieldH)];
     _lonField.placeholder = @"经度"; _lonField.borderStyle = UITextBorderStyleRoundedRect; _lonField.keyboardType = UIKeyboardTypeDecimalPad; _lonField.textColor = [UIColor blackColor];
     [self.view addSubview:_lonField];
     y += fieldH + 8;
     
-    // 备注
-    UILabel *noteLb = [[UILabel alloc] initWithFrame:CGRectMake(margin, y, labelW, fieldH)];
-    noteLb.text = @"备注"; noteLb.textColor = [UIColor blackColor];
-    [self.view addSubview:noteLb];
-    _noteField = [[UITextField alloc] initWithFrame:CGRectMake(margin+labelW, y, self.view.bounds.size.width - margin*2 - labelW, fieldH)];
-    _noteField.placeholder = @"可选"; _noteField.borderStyle = UITextBorderStyleRoundedRect; _noteField.textColor = [UIColor blackColor];
-    [self.view addSubview:_noteField];
+    // 基站信息 (MCC, MNC, LAC, CID)
+    NSArray *bsLabels = @[@"MCC", @"MNC", @"LAC", @"CID"];
+    NSArray *bsFields = @[_mccField = [self createBSField], _mncField = [self createBSField], _lacField = [self createBSField], _cidField = [self createBSField]];
+    CGFloat smallW = (self.view.bounds.size.width - margin*2 - labelW - 3*10) / 4;
+    for (int i = 0; i < 4; i++) {
+        UILabel *lb = [[UILabel alloc] initWithFrame:CGRectMake(margin + (smallW+10)*i, y, 30, fieldH)];
+        lb.text = bsLabels[i]; lb.font = [UIFont systemFontOfSize:12]; lb.textColor = [UIColor blackColor];
+        [self.view addSubview:lb];
+        UITextField *tf = bsFields[i];
+        tf.frame = CGRectMake(margin + 30 + (smallW+10)*i, y, smallW - 30, fieldH);
+        tf.placeholder = bsLabels[i];
+        tf.keyboardType = UIKeyboardTypeNumberPad;
+        [self.view addSubview:tf];
+    }
     y += fieldH + 12;
     
-    // 操作按钮：保存当前（新增/更新）、清空输入框
+    // 一键获取按钮
+    UIButton *fetchBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    fetchBtn.frame = CGRectMake(margin, y, self.view.bounds.size.width - margin*2, 36);
+    [fetchBtn setTitle:@"一键获取真实位置和基站" forState:UIControlStateNormal];
+    [fetchBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    fetchBtn.backgroundColor = [UIColor systemBlueColor]; fetchBtn.layer.cornerRadius = 6;
+    [fetchBtn addTarget:self action:@selector(fetchRealInfo) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:fetchBtn];
+    y += 44;
+    
+    // 保存到列表按钮
     UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    saveBtn.frame = CGRectMake(margin, y, (self.view.bounds.size.width - margin*2 - 10)/2, 36);
+    saveBtn.frame = CGRectMake(margin, y, self.view.bounds.size.width - margin*2, 36);
     [saveBtn setTitle:@"保存到列表" forState:UIControlStateNormal];
     [saveBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     saveBtn.backgroundColor = [UIColor systemGreenColor]; saveBtn.layer.cornerRadius = 6;
     [saveBtn addTarget:self action:@selector(saveFavorite) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:saveBtn];
-    
-    UIButton *clearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    clearBtn.frame = CGRectMake(margin + (self.view.bounds.size.width - margin*2 - 10)/2 + 10, y, (self.view.bounds.size.width - margin*2 - 10)/2, 36);
-    [clearBtn setTitle:@"清空输入" forState:UIControlStateNormal];
-    [clearBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    clearBtn.backgroundColor = [UIColor systemGrayColor]; clearBtn.layer.cornerRadius = 6;
-    [clearBtn addTarget:self action:@selector(clearFields) forControlEvents:UIControlEventTouchUpInside];
-    [self.view addSubview:clearBtn];
     y += 44;
     
     // 列表
     _tableView = [[UITableView alloc] initWithFrame:CGRectMake(margin, y, self.view.bounds.size.width - margin*2, self.view.bounds.size.height - y - 20) style:UITableViewStylePlain];
-    _tableView.backgroundColor = [UIColor whiteColor];
-    _tableView.separatorColor = [UIColor lightGrayColor];
-    _tableView.delegate = self;
-    _tableView.dataSource = self;
-    _tableView.rowHeight = 50;
+    _tableView.backgroundColor = [UIColor whiteColor]; _tableView.separatorColor = [UIColor lightGrayColor];
+    _tableView.delegate = self; _tableView.dataSource = self; _tableView.rowHeight = 50;
     [self.view addSubview:_tableView];
 }
 
+- (UITextField *)createBSField {
+    UITextField *tf = [[UITextField alloc] init];
+    tf.borderStyle = UITextBorderStyleRoundedRect;
+    tf.font = [UIFont systemFontOfSize:13];
+    tf.textColor = [UIColor blackColor];
+    return tf;
+}
+
+- (void)startRealInfoFetch {
+    if (!_locationManager) {
+        _locationManager = [[CLLocationManager alloc] init];
+        _locationManager.delegate = self;
+        [_locationManager requestWhenInUseAuthorization];
+    }
+    [_locationManager requestLocation];
+}
+
+- (void)fetchRealInfo {
+    self.realInfoCompletion = ^(CLLocationCoordinate2D coord, FakeBaseStation bs) {
+        self.latField.text = [NSString stringWithFormat:@"%.6f", coord.latitude];
+        self.lonField.text = [NSString stringWithFormat:@"%.6f", coord.longitude];
+        if (bs.hasBaseStation) {
+            self.mccField.text = [NSString stringWithFormat:@"%ld", (long)bs.mcc];
+            self.mncField.text = [NSString stringWithFormat:@"%ld", (long)bs.mnc];
+            self.lacField.text = [NSString stringWithFormat:@"%ld", (long)bs.lac];
+            self.cidField.text = [NSString stringWithFormat:@"%ld", (long)bs.cid];
+        }
+    };
+    [self startRealInfoFetch];
+}
+
+#pragma mark - CLLocationManagerDelegate
+- (void)locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray<CLLocation *> *)locations {
+    CLLocation *loc = locations.lastObject;
+    if (loc && self.realInfoCompletion) {
+        // 获取基站信息
+        CTTelephonyNetworkInfo *info = [[CTTelephonyNetworkInfo alloc] init];
+        CTCarrier *carrier = info.subscriberCellularProvider;
+        FakeBaseStation bs;
+        bs.mcc = [carrier.mobileCountryCode integerValue];
+        bs.mnc = [carrier.mobileNetworkCode integerValue];
+        bs.lac = 0; // 实际需要基站定位才可获得，这里假数据
+        bs.cid = 0;
+        bs.hasBaseStation = (carrier != nil);
+        self.realInfoCompletion(loc.coordinate, bs);
+        self.realInfoCompletion = nil;
+    }
+}
+
+- (void)locationManager:(CLLocationManager *)manager didFailWithError:(NSError *)error {
+    if (self.realInfoCompletion) {
+        FakeBaseStation bs = {0,0,0,0, NO};
+        self.realInfoCompletion(CLLocationCoordinate2DMake(0, 0), bs);
+        self.realInfoCompletion = nil;
+    }
+}
+
 - (void)doneAction {
-    // 如果输入框中有有效坐标，则应用
+    // 应用当前输入
+    [self applyCoords];
+    self.view.window.hidden = YES;
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"LocationFavoritesDismissed" object:nil];
+}
+
+- (void)applyCoords {
     double lat = [_latField.text doubleValue];
     double lon = [_lonField.text doubleValue];
     if (lat != 0 || lon != 0) {
         [LocationFaker setCoordinate:CLLocationCoordinate2DMake(lat, lon)];
     }
-    // 启用状态根据开关
+    if (_mccField.text.length > 0 || _mncField.text.length > 0) {
+        FakeBaseStation bs;
+        bs.mcc = [_mccField.text integerValue];
+        bs.mnc = [_mncField.text integerValue];
+        bs.lac = [_lacField.text integerValue];
+        bs.cid = [_cidField.text integerValue];
+        bs.hasBaseStation = YES;
+        [LocationFaker setBaseStation:bs];
+    } else {
+        fakedBS.hasBaseStation = NO;
+        [LocationFaker setBaseStation:fakedBS];
+    }
     [LocationFaker setEnabled:_enableSwitch.on];
-    
-    self.view.window.hidden = YES;
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"LocationFavoritesDismissed" object:nil];
 }
 
 - (void)addNewFavorite {
-    [self clearFields];
+    _nameField.text = @"";
+    _latField.text = @"";
+    _lonField.text = @"";
+    _mccField.text = @"";
+    _mncField.text = @"";
+    _lacField.text = @"";
+    _cidField.text = @"";
 }
 
 - (void)saveFavorite {
     double lat = [_latField.text doubleValue];
     double lon = [_lonField.text doubleValue];
+    NSString *name = _nameField.text;
+    if (name.length == 0) {
+        [self showAlert:@"名称必填"];
+        return;
+    }
     if (lat == 0 && lon == 0) return;
-    NSString *name = _nameField.text.length ? _nameField.text : [NSString stringWithFormat:@"%.4f,%.4f", lat, lon];
-    NSString *note = _noteField.text ?: @"";
-    NSDictionary *item = @{@"name": name, @"lat": @(lat), @"lon": @(lon), @"note": note};
     
-    // 检查是否编辑已有项：若名称和经纬度与列表中某项相同，则更新该项
-    NSInteger existingIndex = -1;
+    NSMutableDictionary *item = [NSMutableDictionary dictionaryWithDictionary:@{
+        @"name": name,
+        @"lat": @(lat),
+        @"lon": @(lon)
+    }];
+    if (_mccField.text.length > 0) {
+        item[@"mcc"] = @([_mccField.text integerValue]);
+        item[@"mnc"] = @([_mncField.text integerValue]);
+        item[@"lac"] = @([_lacField.text integerValue]);
+        item[@"cid"] = @([_cidField.text integerValue]);
+    }
+    
+    // 检查重名或同坐标更新
+    NSInteger idx = -1;
     for (NSInteger i = 0; i < self.dataSource.count; i++) {
         NSDictionary *d = self.dataSource[i];
         if ([d[@"name"] isEqualToString:name] || (fabs([d[@"lat"] doubleValue]-lat)<0.000001 && fabs([d[@"lon"] doubleValue]-lon)<0.000001)) {
-            existingIndex = i;
+            idx = i;
             break;
         }
     }
-    if (existingIndex >= 0) {
-        self.dataSource[existingIndex] = item;
-    } else {
-        [self.dataSource addObject:item];
-    }
+    if (idx >= 0) self.dataSource[idx] = item;
+    else [self.dataSource addObject:item];
+    
     [[NSUserDefaults standardUserDefaults] setObject:self.dataSource forKey:@"locationFavorites"];
     [[NSUserDefaults standardUserDefaults] synchronize];
-    [_tableView reloadData];
-    [self clearFields];
+    [self.tableView reloadData];
+    [self addNewFavorite];
 }
 
-- (void)clearFields {
-    _nameField.text = @""; _latField.text = @""; _lonField.text = @""; _noteField.text = @"";
+- (void)showAlert:(NSString *)msg {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:nil message:msg preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 #pragma mark - TableView
@@ -280,7 +438,9 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
     }
     NSDictionary *item = self.dataSource[indexPath.row];
     cell.textLabel.text = item[@"name"];
-    cell.detailTextLabel.text = item[@"note"] ?: @"";
+    NSString *detail = [NSString stringWithFormat:@"%.4f,%.4f", [item[@"lat"] doubleValue], [item[@"lon"] doubleValue]];
+    if (item[@"mcc"]) detail = [detail stringByAppendingFormat:@" 基站%@", item[@"mcc"]];
+    cell.detailTextLabel.text = detail;
     return cell;
 }
 
@@ -290,8 +450,13 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
     _nameField.text = item[@"name"];
     _latField.text = [item[@"lat"] stringValue];
     _lonField.text = [item[@"lon"] stringValue];
-    _noteField.text = item[@"note"];
-    // 不自动应用，等待用户点击完成
+    _mccField.text = item[@"mcc"] ? [item[@"mcc"] stringValue] : @"";
+    _mncField.text = item[@"mnc"] ? [item[@"mnc"] stringValue] : @"";
+    _lacField.text = item[@"lac"] ? [item[@"lac"] stringValue] : @"";
+    _cidField.text = item[@"cid"] ? [item[@"cid"] stringValue] : @"";
+    // 自动应用
+    [self applyCoords];
+    [self doneAction];
 }
 
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath { return YES; }
@@ -301,9 +466,9 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
         [[NSUserDefaults standardUserDefaults] setObject:self.dataSource forKey:@"locationFavorites"];
         [[NSUserDefaults standardUserDefaults] synchronize];
         [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
-        // 如果删除的是当前选中，清空坐标
         if (indexPath.row == [LocationFaker selectedFavoriteIndex]) {
             [LocationFaker setCoordinate:CLLocationCoordinate2DMake(0, 0)];
+            [LocationFaker setBaseStation:(FakeBaseStation){0,0,0,0, NO}];
         }
     }
 }

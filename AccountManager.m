@@ -37,6 +37,7 @@
         self.currentAccount = @"";
         self.roundStartTime = nil;
         self.roundEndTime = nil;
+        self.antiDetection = NO;
     }
     return self;
 }
@@ -317,6 +318,7 @@
     [ud setObject:self.currentAccount ?: @"" forKey:@"currentAccount"];
     [ud setObject:NSStringFromCGPoint(self.floatWindowPoint) forKey:@"floatWindowPoint"];
     [ud synchronize];
+    [ud setBool:self.antiDetection forKey:@"antiDetection"];
 
     NSMutableArray *arr = [NSMutableArray array];
     for (NSDictionary *d in _accounts) [arr addObject:d];
@@ -350,6 +352,7 @@
         self.clickCooldown = [ud doubleForKey:@"clickCooldown"];
         self.lastClickTime = [ud doubleForKey:@"lastClickTime"];
         self.detailedLog = [ud boolForKey:@"detailedLog"];
+        self.antiDetection = [ud boolForKey:@"antiDetection"];
         self.serverURL = [ud stringForKey:@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
         self.currentAccount = [ud stringForKey:@"currentAccount"] ?: @"";
         NSString *fpStr = [ud stringForKey:@"floatWindowPoint"];

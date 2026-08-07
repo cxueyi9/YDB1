@@ -2,6 +2,15 @@
 #import <CoreLocation/CoreLocation.h>
 #import <UIKit/UIKit.h>
 
+// 基站信息结构
+typedef struct {
+    NSInteger mcc;
+    NSInteger mnc;
+    NSInteger lac;
+    NSInteger cid;
+    BOOL hasBaseStation; // 是否包含有效基站数据
+} FakeBaseStation;
+
 @interface LocationFaker : NSObject
 
 + (void)install;
@@ -9,9 +18,16 @@
 + (void)setEnabled:(BOOL)enabled;
 + (CLLocationCoordinate2D)currentCoordinate;
 + (void)setCoordinate:(CLLocationCoordinate2D)coord;
-+ (NSString *)currentName;                     // 当前坐标对应的收藏名称，若无则返回坐标字符串
-+ (NSArray *)favoriteNames;                   // 所有收藏名称（用于选择框）
-+ (NSInteger)selectedFavoriteIndex;           // 当前选中的收藏索引（-1 表示无匹配）
-+ (UIViewController *)favoritesViewController; // 收藏管理页面（独立窗口）
++ (void)setBaseStation:(FakeBaseStation)bs;
++ (FakeBaseStation)currentBaseStation;
++ (BOOL)hasBaseStation;
+
++ (NSString *)currentName;
++ (NSArray *)favoriteNames;
++ (NSInteger)selectedFavoriteIndex;
++ (UIViewController *)favoritesViewController;
+
+// 获取真实位置和基站（用于一键获取）
++ (void)requestRealLocationAndBaseStationWithCompletion:(void(^)(CLLocationCoordinate2D coord, FakeBaseStation bs))completion;
 
 @end

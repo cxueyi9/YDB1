@@ -6,7 +6,7 @@
 @property (nonatomic, weak) UILabel *locNameLabel;
 @property (nonatomic, weak) UILabel *badgeLabel;
 @property (nonatomic, assign) BOOL isEditing;
-@property (nonatomic, copy) NSString *previousLocName;   // 用于检测定位修改
+@property (nonatomic, copy) NSString *previousLocName;
 @end
 
 @implementation FloatView
@@ -253,6 +253,13 @@
     [panel addSubview:locLabel];
     yPos += 36;
     
+    // 防封检查开关
+    [self addLabel:@"防封检查" frameX:leftMargin y:yPos w:70 toPanel:panel];
+    UISwitch *antiSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+75, yPos-5, 51, 31)];
+    antiSwitch.on = mgr.antiDetection; antiSwitch.tag = 3008;
+    [panel addSubview:antiSwitch];
+    yPos += 32;
+    
     // 详细日志
     [self addLabel:@"详细日志" frameX:leftMargin y:yPos w:70 toPanel:panel];
     UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+75, yPos-5, 51, 31)];
@@ -340,13 +347,11 @@
                           [fmt stringFromDate:mgr.roundStartTime]];
         }
     } else {
-        // 无开始时间，可能是刚修改定位
         label.text = [NSString stringWithFormat:@"【%@】已修改定位，待开始！", locName];
     }
 }
 
 - (void)openLocationFavorites {
-    // 保存当前定位名称，用于检测修改
     self.previousLocName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
     
     UIViewController *vc = [LocationFaker favoritesViewController];
@@ -380,7 +385,6 @@
             locLabel.text = [LocationFaker isEnabled] ? [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]] : @"当前未启用";
         }
         
-        // 检查定位是否被修改
         NSString *newLocName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
         if (![newLocName isEqualToString:self.previousLocName]) {
             AccountManager *mgr = [AccountManager shared];
@@ -439,6 +443,8 @@
     mgr.tapLocked = ((UISwitch *)[panel viewWithTag:2005]).on;
     mgr.autoLock = ((UISwitch *)[panel viewWithTag:2004]).on;
     mgr.detailedLog = ((UISwitch *)[panel viewWithTag:3005]).on;
+    mgr.antiDetection = ((UISwitch *)[panel viewWithTag:3008]).on;
+    
     mgr.serverURL = [(UITextField *)[panel viewWithTag:3003] text] ?: mgr.serverURL;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];

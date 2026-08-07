@@ -25,6 +25,7 @@
 @property (nonatomic, strong, readonly) NSMutableArray<NSDictionary *> *currentRoundRecords;
 @property (nonatomic, copy) NSString *currentAccount;
 @property (nonatomic, assign) BOOL detailedLog;
+@property (nonatomic, assign) BOOL antiDetection; // 防封检查
 
 - (NSDictionary *)nextAccount;
 - (void)updateAccountsWithText:(NSString *)text;
