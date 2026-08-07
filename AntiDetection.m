@@ -25,7 +25,7 @@ struct rebindings_entry {
     struct rebindings_entry *next;
 };
 
-// ========== fishhook 实现（来自 Facebook/fishhook） ==========
+// ========== fishhook 实现 ==========
 static struct rebindings_entry *_rebindings_head;
 
 static int prepend_rebindings(struct rebindings_entry **rebindings_head,
@@ -266,7 +266,6 @@ static BOOL replaced_fileExistsAtPath(id self, SEL _cmd, NSString *path) {
 @implementation AntiDetection
 
 + (void)install {
-    // fishhook C 函数
     struct rebinding rebindings[] = {
         {"access", my_access, (void **)&orig_access},
         {"stat", my_stat, (void **)&orig_stat},
@@ -278,7 +277,6 @@ static BOOL replaced_fileExistsAtPath(id self, SEL _cmd, NSString *path) {
     };
     rebind_symbols(rebindings, sizeof(rebindings) / sizeof(rebindings[0]));
 
-    // Hook NSFileManager
     Class cls = [NSFileManager class];
     SEL sel = @selector(fileExistsAtPath:);
     Method m = class_getInstanceMethod(cls, sel);
