@@ -156,7 +156,7 @@
     
     AccountManager *mgr = [AccountManager shared];
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 480;  // 高度微调，保持紧凑
+    CGFloat panelH = 500;  // 适当增加高度，防止底部按钮超出
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -288,7 +288,11 @@
     
     // 定位状态信息（替换原轮次信息）
     UILabel *infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 18)];
-    infoLabel.text = [LocationFaker isEnabled] ? @"【定位】进行中" : @"【定位】未启用";
+    if ([LocationFaker isEnabled]) {
+        infoLabel.text = [NSString stringWithFormat:@"【%@】进行中", [LocationFaker currentName]];
+    } else {
+        infoLabel.text = @"未定位";
+    }
     infoLabel.font = [UIFont boldSystemFontOfSize:13];
     infoLabel.textColor = [UIColor darkGrayColor];
     infoLabel.tag = 4000;
@@ -348,7 +352,11 @@
         }
         UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
         if (infoLabel) {
-            infoLabel.text = [LocationFaker isEnabled] ? @"【定位】进行中" : @"【定位】未启用";
+            if ([LocationFaker isEnabled]) {
+                infoLabel.text = [NSString stringWithFormat:@"【%@】进行中", [LocationFaker currentName]];
+            } else {
+                infoLabel.text = @"未定位";
+            }
         }
         locationWindow.hidden = YES;
         locationWindow = nil;
