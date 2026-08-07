@@ -244,7 +244,7 @@
     [panel addSubview:goBtn];
     yPos += 36;
     
-    // 虚拟定位区域
+    // 虚拟定位区域（简化为按钮+标签，无开关）
     UIView *locLine = [[UIView alloc] initWithFrame:CGRectMake(leftMargin, yPos, panelW-30, 0.5)];
     locLine.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:locLine];
     yPos += 8;
@@ -336,46 +336,6 @@
     [cover addGestureRecognizer:tapCover];
 }
 
-- (void)locationPickerTapped:(UIButton *)sender {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"选择定位" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-    
-    NSArray *names = [LocationFaker favoriteNames];
-    for (NSInteger i = 0; i < names.count; i++) {
-        NSString *name = names[i];
-        [alert addAction:[UIAlertAction actionWithTitle:name style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            NSArray *favList = [[NSUserDefaults standardUserDefaults] objectForKey:@"locationFavorites"] ?: @[];
-            if (i < favList.count) {
-                NSDictionary *item = favList[i];
-                double lat = [item[@"lat"] doubleValue];
-                double lon = [item[@"lon"] doubleValue];
-                [LocationFaker setCoordinate:CLLocationCoordinate2DMake(lat, lon)];
-                [LocationFaker setEnabled:YES];
-                [sender setTitle:[LocationFaker currentName] forState:UIControlStateNormal];
-                UISwitch *locSwitch = (UISwitch *)[[self settingsPanel] viewWithTag:3004];
-                if (locSwitch) locSwitch.on = YES;
-            }
-        }]];
-    }
-    [alert addAction:[UIAlertAction actionWithTitle:@"管理收藏" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        [self openLocationFavorites];
-    }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-    
-    if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
-        alert.popoverPresentationController.sourceView = sender;
-        alert.popoverPresentationController.sourceRect = sender.bounds;
-    }
-    
-    UIViewController *root = [UIApplication sharedApplication].keyWindow.rootViewController;
-    while (root.presentedViewController) root = root.presentedViewController;
-    [root presentViewController:alert animated:YES completion:nil];
-}
-
-- (UIView *)settingsPanel {
-    return [self.superview viewWithTag:1002];
-}
-
-static UIWindow *locationWindow = nil;
 - (void)openLocationFavorites {
     UIViewController *vc = [LocationFaker favoritesViewController];
     if (!vc) return;
@@ -383,11 +343,7 @@ static UIWindow *locationWindow = nil;
     UIWindow *window;
     if (@available(iOS 13.0, *)) {
         UIWindowScene *scene = (UIWindowScene *)[[[UIApplication sharedApplication] connectedScenes] anyObject];
-        if (scene) {
-            window = [[UIWindow alloc] initWithWindowScene:scene];
-        } else {
-            window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-        }
+        window = scene ? [[UIWindow alloc] initWithWindowScene:scene] : [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     } else {
         window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     }
@@ -395,22 +351,26 @@ static UIWindow *locationWindow = nil;
     window.backgroundColor = [UIColor clearColor];
     window.rootViewController = vc;
     window.hidden = NO;
+    static UIWindow *locationWindow = nil;
     locationWindow = window;
     
     [[NSNotificationCenter defaultCenter] addObserverForName:@"LocationFavoritesDismissed"
                                                       object:nil
                                                        queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification *note) {
-// 在 openLocationFavorites 的通知回调中，更新标签
-UIView *panel = [self settingsPanel];
-    UILabel *locLabel = (UILabel *)[panel viewWithTag:3007];
-    if (locLabel) {
-        locLabel.text = [LocationFaker isEnabled] ? [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]] : @"当前未启用";
-    }
+        UIView *panel = [self settingsPanel];
+        UILabel *locLabel = (UILabel *)[panel viewWithTag:3007];
+        if (locLabel) {
+            locLabel.text = [LocationFaker isEnabled] ? [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]] : @"当前未启用";
+        }
         locationWindow.hidden = YES;
         locationWindow = nil;
         [[NSNotificationCenter defaultCenter] removeObserver:self name:@"LocationFavoritesDismissed" object:nil];
     }];
+}
+
+- (UIView *)settingsPanel {
+    return [self.superview viewWithTag:1002];
 }
 
 - (void)jumpAction:(UIButton *)sender {
@@ -458,8 +418,7 @@ UIView *panel = [self settingsPanel];
     mgr.autoLock = ((UISwitch *)[panel viewWithTag:2004]).on;
     mgr.detailedLog = ((UISwitch *)[panel viewWithTag:3005]).on;
     
-    BOOL locEnabled = ((UISwitch *)[panel viewWithTag:3004]).on;
-    [LocationFaker setEnabled:locEnabled];
+    // 不再处理定位开关，定位状态完全由 LocationFaker 管理
     
     UITextField *rATF = (UITextField *)[panel viewWithTag:3000];
     if (rATF.text.length > 0) mgr.roundAName = rATF.text;
