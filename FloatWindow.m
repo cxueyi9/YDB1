@@ -408,6 +408,10 @@ UILabel *locLabel = (UILabel *)[panel viewWithTag:3007];
 if (locLabel) {
     locLabel.text = [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]];
 }
+        locationWindow.hidden = YES;
+        locationWindow = nil;
+        [[NSNotificationCenter defaultCenter] removeObserver:self name:@"LocationFavoritesDismissed" object:nil];
+    }];
 }
 
 - (void)jumpAction:(UIButton *)sender {
