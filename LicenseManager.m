@@ -3,13 +3,10 @@
 #import <CommonCrypto/CommonHMAC.h>
 #import <objc/runtime.h>
 
-// 服务器密钥（需与服务端一致）
-static NSString * const kServerSecret = @"com.wanlianyida.driver.app.123!";
-
-// 注册码格式：base64(标识|过期日期|hmac)
-// 存储键
+static NSString * const kServerSecret = @"YourSecretKey123!";
 static NSString * const kLicenseKey = @"com.license.key";
 
+// 注册视图控制器
 @interface LicenseVC : UIViewController
 @property (nonatomic, copy) NSString *localIdentifier;
 @end
@@ -21,7 +18,7 @@ static NSString * const kLicenseKey = @"com.license.key";
     if (license && [self verifyLicense:license]) {
         return; // 有效
     }
-    // 显示注册页面
+    // 强制显示注册页
     dispatch_async(dispatch_get_main_queue(), ^{
         [self showRegistrationWindow];
     });
@@ -38,18 +35,13 @@ static NSString * const kLicenseKey = @"com.license.key";
     NSString *expireStr = parts[1];
     NSString *hmac = parts[2];
 
-    // 验证本地标识与当前是否一致
     if (![identifier isEqualToString:[self generateLocalIdentifier]]) return NO;
 
-    // 验证过期时间
     long long expire = [expireStr longLongValue];
     if ([[NSDate date] timeIntervalSince1970] > expire) return NO;
 
-    // 验证HMAC
     NSString *computed = [self hmacForIdentifier:identifier expire:expire];
-    if (![computed isEqualToString:hmac]) return NO;
-
-    return YES;
+    return [computed isEqualToString:hmac];
 }
 
 + (NSString *)expireDateString {
@@ -68,9 +60,7 @@ static NSString * const kLicenseKey = @"com.license.key";
     return [fmt stringFromDate:date];
 }
 
-#pragma mark - 本地标识生成
 + (NSString *)generateLocalIdentifier {
-    // 设备UUID（首次生成并保存）
     NSString *key = @"com.license.deviceid";
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     NSString *deviceID = [ud stringForKey:key];
@@ -79,14 +69,11 @@ static NSString * const kLicenseKey = @"com.license.key";
         [ud setObject:deviceID forKey:key];
         [ud synchronize];
     }
-    // APP Bundle ID
     NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown";
-    // 当前时间（年-月-日 时）
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"yyyyMMddHH";
     NSString *timeStr = [fmt stringFromDate:[NSDate date]];
-    NSString *raw = [NSString stringWithFormat:@"%@|%@|%@", deviceID, bundleID, timeStr];
-    return raw;
+    return [NSString stringWithFormat:@"%@|%@|%@", deviceID, bundleID, timeStr];
 }
 
 + (NSString *)hmacForIdentifier:(NSString *)identifier expire:(long long)expire {
@@ -102,33 +89,26 @@ static NSString * const kLicenseKey = @"com.license.key";
     return output;
 }
 
-#pragma mark - 注册页面
 + (void)showRegistrationWindow {
     UIWindow *window;
     if (@available(iOS 13.0, *)) {
         UIWindowScene *scene = (UIWindowScene *)[[[UIApplication sharedApplication] connectedScenes] anyObject];
-        if (scene) {
-            window = [[UIWindow alloc] initWithWindowScene:scene];
-        } else {
-            window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-        }
+        window = scene ? [[UIWindow alloc] initWithWindowScene:scene] : [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     } else {
         window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     }
     window.windowLevel = UIWindowLevelAlert + 100;
     window.backgroundColor = [UIColor whiteColor];
-    window.rootViewController = [UIViewController new];
+    window.rootViewController = [[LicenseVC alloc] init];
     window.hidden = NO;
+    [window makeKeyAndVisible];  // 确保可接收触摸事件
 
-    LicenseVC *vc = [[LicenseVC alloc] init];
-    window.rootViewController = vc;
-    // 保持窗口
+    // 保持窗口不被释放
     objc_setAssociatedObject([UIApplication sharedApplication], "LicenseWindow", window, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
 @end
 
-// 注册视图控制器
 @implementation LicenseVC
 
 - (void)viewDidLoad {
@@ -145,7 +125,6 @@ static NSString * const kLicenseKey = @"com.license.key";
     [self.view addSubview:title];
     y += 50;
 
-    // 本地标识展示
     UITextView *idView = [[UITextView alloc] initWithFrame:CGRectMake(20, y, w-40, 80)];
     idView.text = self.localIdentifier;
     idView.font = [UIFont systemFontOfSize:14];
@@ -155,7 +134,6 @@ static NSString * const kLicenseKey = @"com.license.key";
     [self.view addSubview:idView];
     y += 90;
 
-    // 复制按钮
     UIButton *copyBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     copyBtn.frame = CGRectMake(20, y, 100, 30);
     [copyBtn setTitle:@"复制标识" forState:UIControlStateNormal];
@@ -163,7 +141,6 @@ static NSString * const kLicenseKey = @"com.license.key";
     [self.view addSubview:copyBtn];
     y += 40;
 
-    // 注册码输入框
     UITextField *codeField = [[UITextField alloc] initWithFrame:CGRectMake(20, y, w-40, 40)];
     codeField.placeholder = @"请输入注册码";
     codeField.borderStyle = UITextBorderStyleRoundedRect;
@@ -171,7 +148,6 @@ static NSString * const kLicenseKey = @"com.license.key";
     [self.view addSubview:codeField];
     y += 50;
 
-    // 注册按钮
     UIButton *regBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     regBtn.frame = CGRectMake(20, y, w-40, 44);
     [regBtn setTitle:@"注册" forState:UIControlStateNormal];
@@ -182,7 +158,6 @@ static NSString * const kLicenseKey = @"com.license.key";
     [self.view addSubview:regBtn];
     y += 60;
 
-    // 提示
     UILabel *hint = [[UILabel alloc] initWithFrame:CGRectMake(20, y, w-40, 40)];
     hint.text = @"请将标识码发送给管理员获取注册码";
     hint.textColor = [UIColor grayColor];
@@ -194,7 +169,6 @@ static NSString * const kLicenseKey = @"com.license.key";
 
 - (void)copyID {
     UIPasteboard.generalPasteboard.string = self.localIdentifier;
-    // 简单提示
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:nil message:@"已复制" preferredStyle:UIAlertControllerStyleAlert];
     [self presentViewController:alert animated:YES completion:^{
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -211,8 +185,12 @@ static NSString * const kLicenseKey = @"com.license.key";
     if ([LicenseManager verifyLicense:code]) {
         [[NSUserDefaults standardUserDefaults] setObject:code forKey:@"com.license.key"];
         [[NSUserDefaults standardUserDefaults] synchronize];
-        // 注册成功，退出App
-        exit(0);
+        // 显示成功提示后退出
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"注册成功" message:@"请重新打开应用" preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+            exit(0);
+        }]];
+        [self presentViewController:alert animated:YES completion:nil];
     } else {
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"错误" message:@"注册码无效或已过期" preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
