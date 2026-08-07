@@ -157,7 +157,7 @@
     
     AccountManager *mgr = [AccountManager shared];
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 550;
+    CGFloat panelH = 580;
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -296,6 +296,17 @@
     [self updateInfoLabel:infoLabel];
     [panel addSubview:infoLabel];
     yPos += 22;
+    
+    // 有效期显示
+NSString *expire = [LicenseManager expireDateString];
+if (expire) {
+    UILabel *expireLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 18)];
+    expireLabel.text = [NSString stringWithFormat:@"有效期至：%@", expire];
+    expireLabel.font = [UIFont systemFontOfSize:12];
+    expireLabel.textColor = [UIColor darkGrayColor];
+    [panel addSubview:expireLabel];
+    yPos += 22;
+}
     
     // 底部按钮
     UIButton *copyLogBtn = [UIButton buttonWithType:UIButtonTypeSystem];
