@@ -244,7 +244,7 @@
     [panel addSubview:goBtn];
     yPos += 36;
     
-    // 虚拟定位区域（简化为按钮+标签）
+    // 虚拟定位区域
     UIView *locLine = [[UIView alloc] initWithFrame:CGRectMake(leftMargin, yPos, panelW-30, 0.5)];
     locLine.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:locLine];
     yPos += 8;
@@ -255,21 +255,20 @@
     yPos += 22;
     
     UIButton *locSettingBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    locSettingBtn.frame = CGRectMake(leftMargin, yPos, 100, 30);
-    [locSettingBtn setTitle:@"虚拟定位设置" forState:UIControlStateNormal];
-    locSettingBtn.titleLabel.font = [UIFont systemFontOfSize:12];
-    [locSettingBtn setTitleColor:[UIColor systemBlueColor] forState:UIControlStateNormal];
+    locSettingBtn.frame = CGRectMake(leftMargin, yPos, 110, 30);
+    [locSettingBtn setTitle:@"定位设置" forState:UIControlStateNormal];
+    locSettingBtn.titleLabel.font = [UIFont systemFontOfSize:13];
     locSettingBtn.layer.borderWidth = 0.5;
     locSettingBtn.layer.borderColor = [UIColor lightGrayColor].CGColor;
     locSettingBtn.layer.cornerRadius = 6;
     [locSettingBtn addTarget:self action:@selector(openLocationFavorites) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:locSettingBtn];
     
-    UILabel *locLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin + 110, yPos, panelW - leftMargin - 110 - 15, 30)];
-    locLabel.text = [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]];
+    UILabel *locLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin + 120, yPos, panelW - leftMargin - 120 - 15, 30)];
+    locLabel.text = [LocationFaker isEnabled] ? [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]] : @"当前未启用";
     locLabel.font = [UIFont systemFontOfSize:12];
     locLabel.textColor = [UIColor darkGrayColor];
-    locLabel.tag = 3007; // 用于更新
+    locLabel.tag = 3007;
     [panel addSubview:locLabel];
     yPos += 36;
     
@@ -404,10 +403,10 @@ static UIWindow *locationWindow = nil;
                                                   usingBlock:^(NSNotification *note) {
 // 在 openLocationFavorites 的通知回调中，更新标签
 UIView *panel = [self settingsPanel];
-UILabel *locLabel = (UILabel *)[panel viewWithTag:3007];
-if (locLabel) {
-    locLabel.text = [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]];
-}
+    UILabel *locLabel = (UILabel *)[panel viewWithTag:3007];
+    if (locLabel) {
+        locLabel.text = [LocationFaker isEnabled] ? [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]] : @"当前未启用";
+    }
         locationWindow.hidden = YES;
         locationWindow = nil;
         [[NSNotificationCenter defaultCenter] removeObserver:self name:@"LocationFavoritesDismissed" object:nil];
