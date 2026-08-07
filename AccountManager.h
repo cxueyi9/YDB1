@@ -17,12 +17,13 @@
 @property (nonatomic, assign) NSTimeInterval clickCooldown;
 @property (nonatomic, assign) NSTimeInterval lastClickTime;
 
-// 服务器上传
+// 一轮计时（用于信息标签）
+@property (nonatomic, strong) NSDate *roundStartTime;
+@property (nonatomic, strong) NSDate *roundEndTime;
+
 @property (nonatomic, copy) NSString *serverURL;
 @property (nonatomic, strong, readonly) NSMutableArray<NSDictionary *> *currentRoundRecords;
 @property (nonatomic, copy) NSString *currentAccount;
-
-// 详细日志开关
 @property (nonatomic, assign) BOOL detailedLog;
 
 - (NSDictionary *)nextAccount;

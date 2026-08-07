@@ -35,6 +35,8 @@
         self.serverURL = @"http://你的服务器地址:5000/upload";
         self.currentRoundRecords = [NSMutableArray array];
         self.currentAccount = @"";
+        self.roundStartTime = nil;
+        self.roundEndTime = nil;
     }
     return self;
 }
@@ -91,6 +93,8 @@
     self.currentIndex = 0;
     self.tapLocked = NO;
     self.currentAccount = @"";
+    self.roundStartTime = nil;
+    self.roundEndTime = nil;
     [self saveToFile];
 }
 
@@ -109,6 +113,8 @@
     self.tapLocked = NO;
     self.currentAccount = @"";
     [self saveToFile];
+    self.roundStartTime = nil;
+    self.roundEndTime = nil;
 }
 
 - (NSString *)generateFakedIDForAccount:(NSString *)account {

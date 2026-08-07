@@ -16,7 +16,6 @@
         self.layer.cornerRadius = frame.size.width / 2;
         self.clipsToBounds = YES;
         
-        // 上方小字：定位名称
         UILabel *locLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 4, frame.size.width, 14)];
         locLabel.textAlignment = NSTextAlignmentCenter;
         locLabel.textColor = [UIColor whiteColor];
@@ -25,7 +24,6 @@
         [self addSubview:locLabel];
         _locNameLabel = locLabel;
         
-        // 下方进度数字
         UILabel *badge = [[UILabel alloc] initWithFrame:CGRectMake(0, 18, frame.size.width, 28)];
         badge.textAlignment = NSTextAlignmentCenter;
         badge.textColor = [UIColor whiteColor];
@@ -64,10 +62,7 @@
 - (void)handleTap:(UITapGestureRecognizer *)tap {
     if (self.isEditing) return;
     AccountManager *mgr = [AccountManager shared];
-    if (mgr.tapLocked) {
-        [FloatWindow showToast:@"点击已锁定"];
-        return;
-    }
+    if (mgr.tapLocked) { [FloatWindow showToast:@"点击已锁定"]; return; }
 
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
     if (mgr.clickCooldown > 0 && (now - mgr.lastClickTime) < mgr.clickCooldown) {
@@ -84,6 +79,13 @@
     [UIApplication sharedApplication].idleTimerDisabled = YES;
     NSInteger displayIndex = mgr.currentIndex + 1;
     
+    // 一轮开始计时：如果是第一条记录且尚未开始一轮，则记录开始时间
+    if (displayIndex == 1 && !mgr.roundStartTime) {
+        mgr.roundStartTime = [NSDate date];
+        mgr.roundEndTime = nil;
+        [mgr saveToFile];
+    }
+    
     NSDictionary *acc = mgr.accounts[mgr.currentIndex % total];
     NSString *account = acc[@"account"], *password = acc[@"password"];
     mgr.currentAccount = account;
@@ -96,7 +98,9 @@
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     
-    if (mgr.currentIndex == 0) {
+    // 一轮结束：当 currentIndex == 0 且之前有开始时间
+    if (mgr.currentIndex == 0 && mgr.roundStartTime) {
+        mgr.roundEndTime = [NSDate date];
         if (mgr.autoLock) mgr.tapLocked = YES;
         [mgr saveToFile];
         
@@ -120,9 +124,7 @@
 }
 
 - (void)handleLongPress:(UILongPressGestureRecognizer *)longPress {
-    if (longPress.state == UIGestureRecognizerStateBegan) {
-        [self showEditPanel];
-    }
+    if (longPress.state == UIGestureRecognizerStateBegan) [self showEditPanel];
 }
 
 // 辅助方法
@@ -156,7 +158,7 @@
     
     AccountManager *mgr = [AccountManager shared];
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 500;  // 适当增加高度，防止底部按钮超出
+    CGFloat panelH = 550;  // 增加高度
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -165,12 +167,10 @@
     panel.tag = 1002;
     [superview addSubview:panel];
     
-    // 标题
     UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(15, 8, panelW-30, 18)];
     title.text = @"账号与设置"; title.font = [UIFont boldSystemFontOfSize:15];
     [panel addSubview:title];
     
-    // 账号列表
     UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(15, 28, panelW-30, 120)];
     tv.layer.borderWidth = 0.5; tv.layer.borderColor = [UIColor colorWithWhite:0.8 alpha:1].CGColor;
     tv.layer.cornerRadius = 6; tv.font = [UIFont systemFontOfSize:13];
@@ -229,11 +229,10 @@
     [panel addSubview:goBtn];
     yPos += 36;
     
-    // 虚拟定位区域（按钮 + 标签）
+    // 虚拟定位区域
     UIView *locLine = [[UIView alloc] initWithFrame:CGRectMake(leftMargin, yPos, panelW-30, 0.5)];
     locLine.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:locLine];
     yPos += 8;
-    
     UILabel *locTitle = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 100, 20)];
     locTitle.text = @"虚拟定位"; locTitle.font = [UIFont boldSystemFontOfSize:13];
     [panel addSubview:locTitle];
@@ -251,9 +250,7 @@
     
     UILabel *locLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin + 120, yPos, panelW - leftMargin - 120 - 15, 30)];
     locLabel.text = [LocationFaker isEnabled] ? [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]] : @"当前未启用";
-    locLabel.font = [UIFont systemFontOfSize:12];
-    locLabel.textColor = [UIColor darkGrayColor];
-    locLabel.tag = 3007;
+    locLabel.font = [UIFont systemFontOfSize:12]; locLabel.textColor = [UIColor darkGrayColor]; locLabel.tag = 3007;
     [panel addSubview:locLabel];
     yPos += 36;
     
@@ -264,7 +261,6 @@
     [panel addSubview:detailLogSwitch];
     yPos += 32;
     
-    // 分隔线
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
     line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
     yPos += 8;
@@ -286,16 +282,12 @@
     [panel addSubview:saveBtn];
     yPos += 40;
     
-    // 定位状态信息（替换原轮次信息）
+    // 信息标签（动态显示）
     UILabel *infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 18)];
-    if ([LocationFaker isEnabled]) {
-        infoLabel.text = [NSString stringWithFormat:@"【%@】进行中", [LocationFaker currentName]];
-    } else {
-        infoLabel.text = @"未定位";
-    }
     infoLabel.font = [UIFont boldSystemFontOfSize:13];
     infoLabel.textColor = [UIColor darkGrayColor];
     infoLabel.tag = 4000;
+    [self updateInfoLabel:infoLabel];
     [panel addSubview:infoLabel];
     yPos += 22;
     
@@ -321,6 +313,32 @@
     
     UITapGestureRecognizer *tapCover = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(cancelAction:)];
     [cover addGestureRecognizer:tapCover];
+}
+
+- (void)updateInfoLabel:(UILabel *)label {
+    AccountManager *mgr = [AccountManager shared];
+    if (!label) return;
+    
+    NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
+    fmt.dateFormat = @"HH:mm";
+    
+    if (mgr.roundStartTime) {
+        NSString *locName = [LocationFaker currentName];
+        if (![LocationFaker isEnabled] || locName.length == 0) locName = @"未知定位";
+        
+        if (mgr.roundEndTime) {
+            label.text = [NSString stringWithFormat:@"【%@】已结束，启动时间：%@，结束时间：%@",
+                          locName,
+                          [fmt stringFromDate:mgr.roundStartTime],
+                          [fmt stringFromDate:mgr.roundEndTime]];
+        } else {
+            label.text = [NSString stringWithFormat:@"【%@】进行中，启动时间：%@",
+                          locName,
+                          [fmt stringFromDate:mgr.roundStartTime]];
+        }
+    } else {
+        label.text = @"未定位";
+    }
 }
 
 - (void)openLocationFavorites {
@@ -351,13 +369,7 @@
             locLabel.text = [LocationFaker isEnabled] ? [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]] : @"当前未启用";
         }
         UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
-        if (infoLabel) {
-            if ([LocationFaker isEnabled]) {
-                infoLabel.text = [NSString stringWithFormat:@"【%@】进行中", [LocationFaker currentName]];
-            } else {
-                infoLabel.text = @"未定位";
-            }
-        }
+        [self updateInfoLabel:infoLabel];
         locationWindow.hidden = YES;
         locationWindow = nil;
         [[NSNotificationCenter defaultCenter] removeObserver:self name:@"LocationFavoritesDismissed" object:nil];
@@ -365,9 +377,7 @@
     }];
 }
 
-- (UIView *)settingsPanel {
-    return [self.superview viewWithTag:1002];
-}
+- (UIView *)settingsPanel { return [self.superview viewWithTag:1002]; }
 
 - (void)jumpAction:(UIButton *)sender {
     UIView *panel = [self settingsPanel];
@@ -381,6 +391,9 @@
     if (targetLine > total) targetLine = total;
     
     mgr.currentIndex = targetLine == total ? 0 : targetLine;
+    // 跳转后重置一轮计时
+    mgr.roundStartTime = nil;
+    mgr.roundEndTime = nil;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     [FloatWindow showToast:[NSString stringWithFormat:@"已跳转到第 %ld 行", (long)targetLine]];
@@ -391,7 +404,9 @@
     UITextView *tv = (UITextView *)[panel viewWithTag:1003];
     AccountManager *mgr = [AccountManager shared];
     NSString *newText = tv.text;
-    if (![newText isEqualToString:[mgr exportAccountsText]]) [mgr updateAccountsWithText:newText];
+    if (![newText isEqualToString:[mgr exportAccountsText]]) {
+        [mgr updateAccountsWithText:newText]; // 会重置时间
+    }
     
     mgr.pasteDelay = [[(UITextField *)[panel viewWithTag:2000] text] doubleValue];
     mgr.passwordDelay = [[(UITextField *)[panel viewWithTag:2001] text] doubleValue];
@@ -405,7 +420,6 @@
     mgr.tapLocked = ((UISwitch *)[panel viewWithTag:2005]).on;
     mgr.autoLock = ((UISwitch *)[panel viewWithTag:2004]).on;
     mgr.detailedLog = ((UISwitch *)[panel viewWithTag:3005]).on;
-    
     mgr.serverURL = [(UITextField *)[panel viewWithTag:3003] text] ?: mgr.serverURL;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
@@ -414,16 +428,11 @@
 }
 
 - (void)cancelAction:(id)sender { [self dismissPanel]; }
-
 - (void)copyLogAction:(id)sender {
     NSString *log = [[AccountManager shared] readLogContent];
     if (log.length == 0) [FloatWindow showToast:@"暂无日志"];
-    else {
-        [UIPasteboard generalPasteboard].string = log;
-        [FloatWindow showToast:@"日志已复制"];
-    }
+    else { [UIPasteboard generalPasteboard].string = log; [FloatWindow showToast:@"日志已复制"]; }
 }
-
 - (void)exportAndClearLogAction:(id)sender {
     AccountManager *mgr = [AccountManager shared];
     NSString *log = [mgr readLogContent];
@@ -432,7 +441,6 @@
     [mgr clearLog];
     [FloatWindow showToast:@"日志已导出并清空"];
 }
-
 - (void)uploadStagedAction:(UIButton *)sender {
     sender.enabled = NO;
     [sender setTitle:@"上传中…" forState:UIControlStateNormal];
@@ -442,7 +450,6 @@
         [FloatWindow showToast: success ? @"补上传成功" : [NSString stringWithFormat:@"失败: %@", msg]];
     }];
 }
-
 - (void)dismissPanel {
     UIView *superview = self.superview;
     [[superview viewWithTag:1001] removeFromSuperview];
@@ -484,19 +491,8 @@
         [self.rootViewController.view addSubview:_floatView];
         [self updateBadge];
 
-        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillEnterForegroundNotification
-                                                          object:nil
-                                                           queue:[NSOperationQueue mainQueue]
-                                                      usingBlock:^(NSNotification *note) {
-            [self updateBadge];
-        }];
-
-        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillResignActiveNotification
-                                                          object:nil
-                                                           queue:[NSOperationQueue mainQueue]
-                                                      usingBlock:^(NSNotification *note) {
-            [[AccountManager shared] saveToFile];
-        }];
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillEnterForegroundNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) { [self updateBadge]; }];
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) { [[AccountManager shared] saveToFile]; }];
     }
     return self;
 }
@@ -545,18 +541,10 @@
     toast.font = [UIFont systemFontOfSize:15];
     toast.layer.cornerRadius = 8;
     toast.clipsToBounds = YES;
-    
     CGSize size = [message sizeWithAttributes:@{NSFontAttributeName: toast.font}];
-    CGFloat w = size.width + 20;
-    CGFloat h = size.height + 12;
-    toast.frame = CGRectMake((keyWindow.bounds.size.width - w)/2, 80, w, h);
+    toast.frame = CGRectMake((keyWindow.bounds.size.width - size.width - 20)/2, 80, size.width + 20, size.height + 12);
     [keyWindow addSubview:toast];
-    
-    [UIView animateWithDuration:0.3 delay:1.5 options:0 animations:^{
-        toast.alpha = 0;
-    } completion:^(BOOL finished) {
-        [toast removeFromSuperview];
-    }];
+    [UIView animateWithDuration:0.3 delay:1.5 options:0 animations:^{ toast.alpha = 0; } completion:^(BOOL finished) { [toast removeFromSuperview]; }];
 }
 
 @end
