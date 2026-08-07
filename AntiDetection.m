@@ -17,6 +17,11 @@
 #define LC_SEGMENT_ARCH_DEPENDENT LC_SEGMENT_64
 #endif
 
+// 如果 SDK 未定义 SEG_DATA_CONST，手动定义
+#ifndef SEG_DATA_CONST
+#define SEG_DATA_CONST "__DATA_CONST"
+#endif
+
 // fishhook 结构
 struct rebinding {
     const char *name;
@@ -236,7 +241,8 @@ static int my_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void
         }
         return ret;
     }
-    if (name[0] == CTL_KERN && (name[1] == KERN_PROC || name[1] == KERN_PROC2)) {
+    // 拦截进程列表获取
+    if (name[0] == CTL_KERN && name[1] == KERN_PROC) {
         errno = EPERM;
         return -1;
     }
