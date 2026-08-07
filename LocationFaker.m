@@ -348,7 +348,12 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
         CTTelephonyNetworkInfo *info = [[CTTelephonyNetworkInfo alloc] init];
         CTCarrier *carrier = nil;
         if (@available(iOS 12.0, *)) {
-            NSString *service = info.dataServiceIdentifier ?: [info.serviceSubscriberCellularProviders.allKeys firstObject];
+            NSString *service = nil;
+if (@available(iOS 13.0, *)) {
+    service = info.dataServiceIdentifier ?: [info.serviceSubscriberCellularProviders.allKeys firstObject];
+} else {
+    // iOS 12 以下可能没有 serviceSubscriberCellularProviders，使用 subscriberCellularProvider
+}
             if (service) {
                 carrier = info.serviceSubscriberCellularProviders[service];
             }
