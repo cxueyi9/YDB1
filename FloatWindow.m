@@ -8,7 +8,7 @@
 @property (nonatomic, weak) UILabel *badgeLabel;
 @property (nonatomic, assign) BOOL isEditing;
 @property (nonatomic, copy) NSString *previousLocName;
-@property (nonatomic, assign) BOOL locModified;   // 定位是否被修改过（用于信息标签）
+@property (nonatomic, assign) BOOL locChanged;      // 定位是否被修改（影响“已修改定位”前缀）
 @end
 
 @implementation FloatView
@@ -44,7 +44,7 @@
         UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
         [self addGestureRecognizer:longPress];
 
-        self.locModified = NO;
+        self.locChanged = NO;
     }
     return self;
 }
@@ -84,11 +84,11 @@
     [UIApplication sharedApplication].idleTimerDisabled = YES;
     NSInteger displayIndex = mgr.currentIndex + 1;
     
-    // 每次点击，如果是第一个账号，则记录开始时间，清除结束标记，并重置定位修改标志
+    // 重新开始新的一轮
     if (displayIndex == 1) {
         mgr.roundStartTime = [NSDate date];
         mgr.roundEndTime = nil;
-        self.locModified = NO;
+        self.locChanged = NO;            // 清除定位修改标记
         [mgr saveToFile];
     }
     
@@ -104,9 +104,10 @@
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     
-    // 一轮结束（填充后 currentIndex == 0）
+    // 本轮结束（填充后 currentIndex == 0）
     if (mgr.currentIndex == 0) {
         mgr.roundEndTime = [NSDate date];
+        self.locChanged = NO;            // 结束本轮，清除定位修改标记
         if (mgr.autoLock) {
             mgr.tapLocked = YES;
         }
@@ -166,7 +167,7 @@
     
     AccountManager *mgr = [AccountManager shared];
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 590;  // 保持你的设定
+    CGFloat panelH = 590;
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -213,24 +214,22 @@
     [self addSwitch:2005 on:mgr.tapLocked frameX:secondColX+70 y:yPos-5 toPanel:panel];
     yPos += 36;
     
-    // 自动锁定 / 跳转到
+    // 自动锁定 / 详细日志
     [self addLabel:@"自动锁定" frameX:leftMargin y:yPos w:80 toPanel:panel];
     [self addSwitch:2004 on:mgr.autoLock frameX:leftMargin+70 y:yPos-5 toPanel:panel];
-    
-    // 详细日志
     [self addLabel:@"详细日志" frameX:secondColX y:yPos w:70 toPanel:panel];
     UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(secondColX+70, yPos-5, 51, 31)];
     detailLogSwitch.on = mgr.detailedLog; detailLogSwitch.tag = 3005;
     [panel addSubview:detailLogSwitch];
     yPos += 36;
     
-    // 防封检查开关
+    // 防封检查
     [self addLabel:@"防封检查" frameX:leftMargin y:yPos w:70 toPanel:panel];
     UISwitch *antiSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+70, yPos-5, 51, 31)];
     antiSwitch.on = mgr.antiDetection; antiSwitch.tag = 3008;
     [panel addSubview:antiSwitch];
     
-    // 保存按钮（仅一个）
+    // 保存按钮
     UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     saveBtn.frame = CGRectMake(panelW/2+15, yPos-5, 95, 32);
     [saveBtn setTitle:@"保存" forState:UIControlStateNormal]; saveBtn.titleLabel.font = [UIFont systemFontOfSize:14];
@@ -256,7 +255,7 @@
     [goBtn addTarget:self action:@selector(jumpAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:goBtn];
 
-    // 复位按钮（新增）
+    // 复位按钮
     UIButton *resetBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     resetBtn.frame = CGRectMake(leftMargin+50+60+50, yPos-2, 45, 26);
     [resetBtn setTitle:@"复位" forState:UIControlStateNormal]; resetBtn.titleLabel.font = [UIFont systemFontOfSize:13];
@@ -270,7 +269,6 @@
     UIView *locLine = [[UIView alloc] initWithFrame:CGRectMake(leftMargin, yPos, panelW-30, 0.5)];
     locLine.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:locLine];
     yPos += 8;
-    
     UILabel *locTitle = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 100, 20)];
     locTitle.text = @"虚拟定位"; locTitle.font = [UIFont boldSystemFontOfSize:13];
     [panel addSubview:locTitle];
@@ -292,7 +290,7 @@
     [panel addSubview:locLabel];
     yPos += 46;
     
-    // 信息标签（新逻辑）
+    // 信息标签
     UILabel *infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 18)];
     infoLabel.font = [UIFont boldSystemFontOfSize:13];
     infoLabel.textColor = [UIColor darkGrayColor];
@@ -336,7 +334,6 @@
     line2.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line2];
     yPos += 8;
     
-    // 有效期显示
     NSString *expire = [LicenseManager expireDateString];
     if (expire) {
         UILabel *expireLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 18)];
@@ -358,35 +355,28 @@
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"HH:mm";
     
-    BOOL locEnabled = [LocationFaker isEnabled];
-    if (!locEnabled) {
-        label.text = @"未定位";
+    BOOL hasStart = (mgr.roundStartTime != nil);
+    BOOL hasEnd = (mgr.roundEndTime != nil);
+    BOOL isLast = (mgr.currentIndex == 0 && mgr.accounts.count > 0);
+    
+    if (!hasStart && !hasEnd) {
+        label.text = @"待开始";
         return;
     }
     
-    NSInteger total = mgr.accounts.count;
-    BOOL isLast = (mgr.currentIndex == 0 && total > 0);
-    BOOL hasStart = (mgr.roundStartTime != nil);
-    BOOL hasEnd = (mgr.roundEndTime != nil);
+    NSString *prefix = self.locChanged ? @"已修改定位，" : @"";
     
-    if (self.locModified) {
-        if (isLast) {
-            label.text = @"已修改定位，待开始！";
-        } else {
-            NSString *startStr = hasStart ? [fmt stringFromDate:mgr.roundStartTime] : @"--";
-            label.text = [NSString stringWithFormat:@"已修改定位，【进行中】，启动：%@", startStr];
-        }
-    } else {
-        if (hasEnd) {
-            label.text = [NSString stringWithFormat:@"【已结束】，启动：%@，结束：%@",
-                          [fmt stringFromDate:mgr.roundStartTime],
-                          [fmt stringFromDate:mgr.roundEndTime]];
-        } else if (hasStart) {
-            label.text = [NSString stringWithFormat:@"【进行中】，启动：%@",
-                          [fmt stringFromDate:mgr.roundStartTime]];
-        } else {
-            label.text = @"待开始";
-        }
+    if (hasEnd) {
+        // 已结束
+        label.text = [NSString stringWithFormat:@"%@【已结束】，启动：%@，结束：%@",
+                      prefix,
+                      [fmt stringFromDate:mgr.roundStartTime],
+                      [fmt stringFromDate:mgr.roundEndTime]];
+    } else if (hasStart) {
+        // 进行中
+        label.text = [NSString stringWithFormat:@"%@【进行中】，启动：%@",
+                      prefix,
+                      [fmt stringFromDate:mgr.roundStartTime]];
     }
 }
 
@@ -426,11 +416,9 @@
         
         NSString *newLocName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
         if (![newLocName isEqualToString:self.previousLocName]) {
-            AccountManager *mgr = [AccountManager shared];
-            mgr.roundStartTime = nil;
-            mgr.roundEndTime = nil;
-            self.locModified = YES;   // 标记定位已修改
-            [mgr saveToFile];
+            // 定位发生变化，标记为修改过
+            self.locChanged = YES;
+            // 不清空启动时间！ 只改变标志
         }
         
         UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
@@ -446,33 +434,6 @@
 - (UIView *)settingsPanel { return [self.superview viewWithTag:1002]; }
 
 - (void)jumpAction:(UIButton *)sender {
-    [self jumpToLineFromTextField];
-}
-
-- (void)resetAction:(UIButton *)sender {
-    AccountManager *mgr = [AccountManager shared];
-    NSInteger total = mgr.accounts.count;
-    if (total == 0) {
-        [FloatWindow showToast:@"暂无账号"];
-        return;
-    }
-    // 复位：跳转到最后一个账号位置（效果等同于已结束状态）
-    mgr.currentIndex = 0;
-    mgr.roundStartTime = nil;
-    mgr.roundEndTime = [NSDate date];   // 标记结束
-    self.locModified = NO;              // 不再认为定位修改
-    [mgr saveToFile];
-    [[FloatWindow shared] updateBadge];
-    
-    // 更新输入框
-    UIView *panel = [self settingsPanel];
-    UITextField *jumpTF = (UITextField *)[panel viewWithTag:3002];
-    if (jumpTF) jumpTF.text = [NSString stringWithFormat:@"%ld", (long)total];
-    
-    [FloatWindow showToast:@"已复位至最后一组"];
-}
-
-- (void)jumpToLineFromTextField {
     UIView *panel = [self settingsPanel];
     UITextField *jumpTF = (UITextField *)[panel viewWithTag:3002];
     NSInteger targetLine = [jumpTF.text integerValue];
@@ -483,20 +444,44 @@
     if (targetLine < 1) targetLine = 1;
     if (targetLine > total) targetLine = total;
     
-    if (targetLine == total) {
-        mgr.currentIndex = 0;
-        mgr.roundStartTime = nil;
-        mgr.roundEndTime = [NSDate date];
-        self.locModified = NO;
-    } else {
-        mgr.currentIndex = targetLine;
-        mgr.roundStartTime = nil;
+    if (targetLine == 1) {
+        // 跳转到第一个：开启新一轮
+        mgr.currentIndex = 1;
+        mgr.roundStartTime = [NSDate date];
         mgr.roundEndTime = nil;
-        self.locModified = NO;   // 跳转后视为未修改定位（重新开始）
+        self.locChanged = NO;
+    } else if (targetLine == total) {
+        // 跳转到最后一个：标记结束
+        mgr.currentIndex = 0;
+        if (!mgr.roundStartTime) {
+            mgr.roundStartTime = [NSDate date]; // 如果没有启动时间，给一个默认值
+        }
+        mgr.roundEndTime = [NSDate date];
+        self.locChanged = NO;
+    } else {
+        // 中间行号：只改变索引，不改变时间
+        mgr.currentIndex = targetLine;
     }
+    
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     [FloatWindow showToast:[NSString stringWithFormat:@"已跳转到第 %ld 行", (long)targetLine]];
+}
+
+- (void)resetAction:(UIButton *)sender {
+    AccountManager *mgr = [AccountManager shared];
+    NSInteger total = mgr.accounts.count;
+    if (total == 0) { [FloatWindow showToast:@"暂无账号"]; return; }
+    
+    mgr.currentIndex = 0;
+    mgr.roundEndTime = [NSDate date];
+    if (!mgr.roundStartTime) {
+        mgr.roundStartTime = [NSDate date];
+    }
+    self.locChanged = NO;
+    [mgr saveToFile];
+    [[FloatWindow shared] updateBadge];
+    [FloatWindow showToast:@"已复位至最后一组"];
 }
 
 - (void)saveAction:(id)sender {
@@ -506,7 +491,7 @@
     NSString *newText = tv.text;
     if (![newText isEqualToString:[mgr exportAccountsText]]) {
         [mgr updateAccountsWithText:newText];
-        self.locModified = NO;   // 修改账号列表重置定位修改标志
+        self.locChanged = NO;   // 修改账号列表重置定位修改标记
     }
     
     mgr.pasteDelay = [[(UITextField *)[panel viewWithTag:2000] text] doubleValue];
