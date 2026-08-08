@@ -231,7 +231,7 @@
     UISwitch *antiSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+70, yPos-5, 51, 31)];
     antiSwitch.on = mgr.antiDetection; antiSwitch.tag = 3008;
     [panel addSubview:antiSwitch];
-    yPos += 32;
+    yPos += 36;
     
     // 详细日志
     //[self addLabel:@"详细日志" frameX:leftMargin y:yPos w:70 toPanel:panel];
@@ -251,7 +251,7 @@
     //[panel addSubview:cancelBtn];
     
     UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    saveBtn.frame = CGRectMake(panelW/2+15, yPos, 95, 32);
+    saveBtn.frame = CGRectMake(panelW/2+15, yPos-5, 95, 32);
     [saveBtn setTitle:@"保存" forState:UIControlStateNormal]; saveBtn.titleLabel.font = [UIFont systemFontOfSize:14];
     saveBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.9];
     [saveBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal]; saveBtn.layer.cornerRadius = 8;
