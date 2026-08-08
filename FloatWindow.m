@@ -225,6 +225,41 @@
     [panel addSubview:goBtn];
     yPos += 36;
     
+        
+    // 防封检查开关
+    [self addLabel:@"防封检查" frameX:leftMargin y:yPos w:70 toPanel:panel];
+    UISwitch *antiSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+70, yPos-5, 51, 31)];
+    antiSwitch.on = mgr.antiDetection; antiSwitch.tag = 3008;
+    [panel addSubview:antiSwitch];
+    //yPos += 32;
+    
+    // 详细日志
+    //[self addLabel:@"详细日志" frameX:leftMargin y:yPos w:70 toPanel:panel];
+    //UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+75, yPos-5, 51, 31)];
+    [self addLabel:@"详细日志" frameX:panelW/2+15 y:yPos w:70 toPanel:panel];
+    UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(panelW/2+75, yPos-5, 51, 31)];
+    detailLogSwitch.on = mgr.detailedLog; detailLogSwitch.tag = 3005;
+    [panel addSubview:detailLogSwitch];
+    yPos += 40;
+    
+        // 保存/取消
+    UIButton *cancelBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    cancelBtn.frame = CGRectMake(panelW/2-110, yPos, 95, 32);
+    [cancelBtn setTitle:@"取消" forState:UIControlStateNormal]; cancelBtn.titleLabel.font = [UIFont systemFontOfSize:14];
+    cancelBtn.backgroundColor = [UIColor colorWithWhite:0.95 alpha:1]; cancelBtn.layer.cornerRadius = 8;
+    [cancelBtn addTarget:self action:@selector(cancelAction:) forControlEvents:UIControlEventTouchUpInside];
+    [panel addSubview:cancelBtn];
+    
+    UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    saveBtn.frame = CGRectMake(panelW/2+15, yPos, 95, 32);
+    [saveBtn setTitle:@"保存" forState:UIControlStateNormal]; saveBtn.titleLabel.font = [UIFont systemFontOfSize:14];
+    saveBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.9];
+    [saveBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal]; saveBtn.layer.cornerRadius = 8;
+    [saveBtn addTarget:self action:@selector(saveAction:) forControlEvents:UIControlEventTouchUpInside];
+    [panel addSubview:saveBtn];
+    yPos += 40;
+    
+    
     // 虚拟定位区域
     UIView *locLine = [[UIView alloc] initWithFrame:CGRectMake(leftMargin, yPos, panelW-30, 0.5)];
     locLine.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:locLine];
@@ -253,45 +288,6 @@
     //yPos += 36;
     yPos += 46;
       
-    
-    // 保存/取消
-    UIButton *cancelBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    cancelBtn.frame = CGRectMake(panelW/2-110, yPos, 95, 32);
-    [cancelBtn setTitle:@"取消" forState:UIControlStateNormal]; cancelBtn.titleLabel.font = [UIFont systemFontOfSize:14];
-    cancelBtn.backgroundColor = [UIColor colorWithWhite:0.95 alpha:1]; cancelBtn.layer.cornerRadius = 8;
-    [cancelBtn addTarget:self action:@selector(cancelAction:) forControlEvents:UIControlEventTouchUpInside];
-    [panel addSubview:cancelBtn];
-    
-    UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    saveBtn.frame = CGRectMake(panelW/2+15, yPos, 95, 32);
-    [saveBtn setTitle:@"保存" forState:UIControlStateNormal]; saveBtn.titleLabel.font = [UIFont systemFontOfSize:14];
-    saveBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.9];
-    [saveBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal]; saveBtn.layer.cornerRadius = 8;
-    [saveBtn addTarget:self action:@selector(saveAction:) forControlEvents:UIControlEventTouchUpInside];
-    [panel addSubview:saveBtn];
-    yPos += 40;
-    
-    //分割线
-    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
-    line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
-    yPos += 8;
-    
-    // 防封检查开关
-    [self addLabel:@"防封检查" frameX:leftMargin y:yPos w:70 toPanel:panel];
-    UISwitch *antiSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+70, yPos-5, 51, 31)];
-    antiSwitch.on = mgr.antiDetection; antiSwitch.tag = 3008;
-    [panel addSubview:antiSwitch];
-    //yPos += 32;
-    
-    // 详细日志
-    //[self addLabel:@"详细日志" frameX:leftMargin y:yPos w:70 toPanel:panel];
-    //UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+75, yPos-5, 51, 31)];
-    [self addLabel:@"详细日志" frameX:panelW/2+15 y:yPos w:70 toPanel:panel];
-    UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(panelW/2+75, yPos-5, 51, 31)];
-    detailLogSwitch.on = mgr.detailedLog; detailLogSwitch.tag = 3005;
-    [panel addSubview:detailLogSwitch];
-    yPos += 32;
-    
     // 信息标签
     UILabel *infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 18)];
     infoLabel.font = [UIFont boldSystemFontOfSize:13];
@@ -299,12 +295,20 @@
     infoLabel.tag = 4000;
     [self updateInfoLabel:infoLabel];
     [panel addSubview:infoLabel];
-    yPos += 22;
+    yPos += 32;
     
+
+    //分割线
+    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
+    line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
+    yPos += 16;
+
+    
+      
     // 服务器地址
     [self addLabel:@"服务器地址" frameX:leftMargin y:yPos w:70 toPanel:panel];
     [self addTextField:3003 value:mgr.serverURL frameX:leftMargin+75 y:yPos-2 w:panelW-120 toPanel:panel];
-    yPos += 34;
+    yPos += 22;
     
     
     // 底部按钮
