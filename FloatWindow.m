@@ -236,7 +236,7 @@
     // 详细日志
     //[self addLabel:@"详细日志" frameX:leftMargin y:yPos w:70 toPanel:panel];
     //UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+75, yPos-5, 51, 31)];
-    [self addLabel:@"详细日志" frameX:panelW/2+15 y:yPos w:70 toPanel:panel];
+    [self addLabel:@"详细日志" frameX:secondColX y:yPos w:70 toPanel:panel];
     UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(panelW/2+75, yPos-5, 51, 31)];
     detailLogSwitch.on = mgr.detailedLog; detailLogSwitch.tag = 3005;
     [panel addSubview:detailLogSwitch];
@@ -301,14 +301,14 @@
     //分割线
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
     line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
-    yPos += 16;
+    yPos += 8;
 
     
       
     // 服务器地址
     [self addLabel:@"服务器地址" frameX:leftMargin y:yPos w:70 toPanel:panel];
     [self addTextField:3003 value:mgr.serverURL frameX:leftMargin+75 y:yPos-2 w:panelW-120 toPanel:panel];
-    yPos += 22;
+    yPos += 30;
     
     
     // 底部按钮
