@@ -22,6 +22,7 @@ static BOOL enabled = NO;
 static CLLocationCoordinate2D fakedCoord = {37.3349, -122.0093};
 static FakeBaseStation fakedBS = {0,0,0,0, NO};
 static NSInteger selectedFavoriteIndex = -1;
+static BOOL fetchingReal = NO;   // 是否正在获取真实信息，此时 Hook 应返回真实值
 
 static NSString * const kEnabledKey = @"LocationFakerEnabled";
 static NSString * const kLatitudeKey = @"LocationFakerLatitude";
@@ -84,7 +85,7 @@ static void syncIndexWithCurrentCoordinate() {
 // ========== Hook CLLocation coordinate ==========
 static CLLocationCoordinate2D (*orig_coordinate)(id self, SEL _cmd);
 static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
-    if (enabled) {
+    if (enabled && !fetchingReal) {   // 正在获取真实位置时不伪装
         NSString *name = [LocationFaker currentName];
         NSString *hint = fakedBS.hasBaseStation ? @"基站信息已伪装" : @"GPS定位已伪装";
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -101,7 +102,7 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
 // ========== Hook CoreTelephony 基站信息 ==========
 static NSString* (*orig_mobileNetworkCode)(id self, SEL _cmd);
 static NSString* replaced_mobileNetworkCode(id self, SEL _cmd) {
-    if (enabled && fakedBS.hasBaseStation) {
+    if (enabled && !fetchingReal && fakedBS.hasBaseStation) {
         return [NSString stringWithFormat:@"%02ld", (long)fakedBS.mnc];
     }
     return orig_mobileNetworkCode(self, _cmd);
@@ -109,7 +110,7 @@ static NSString* replaced_mobileNetworkCode(id self, SEL _cmd) {
 
 static NSString* (*orig_mobileCountryCode)(id self, SEL _cmd);
 static NSString* replaced_mobileCountryCode(id self, SEL _cmd) {
-    if (enabled && fakedBS.hasBaseStation) {
+    if (enabled && !fetchingReal && fakedBS.hasBaseStation) {
         return [NSString stringWithFormat:@"%03ld", (long)fakedBS.mcc];
     }
     return orig_mobileCountryCode(self, _cmd);
@@ -117,7 +118,7 @@ static NSString* replaced_mobileCountryCode(id self, SEL _cmd) {
 
 static NSString* (*orig_isoCountryCode)(id self, SEL _cmd);
 static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
-    if (enabled && fakedBS.hasBaseStation) {
+    if (enabled && !fetchingReal && fakedBS.hasBaseStation) {
         return @"cn";
     }
     return orig_isoCountryCode(self, _cmd);
@@ -281,7 +282,7 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
     [fetchBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     fetchBtn.backgroundColor = [UIColor systemBlueColor]; fetchBtn.layer.cornerRadius = 6;
     [fetchBtn addTarget:self action:@selector(fetchRealInfo) forControlEvents:UIControlEventTouchUpInside];
-    fetchBtn.tag = 100; // 用于获取时修改标题
+    fetchBtn.tag = 100;
     [self.view addSubview:fetchBtn];
     y += 44;
     
@@ -315,6 +316,8 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
         _locationManager.delegate = self;
         [_locationManager requestWhenInUseAuthorization];
     }
+    // 临时关闭虚拟定位，确保获取真实数据
+    fetchingReal = YES;
     [_locationManager requestLocation];
 }
 
@@ -337,6 +340,7 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
         UIButton *b = (UIButton *)[strongSelf.view viewWithTag:100];
         b.enabled = YES;
         [b setTitle:@"一键获取真实位置和基站" forState:UIControlStateNormal];
+        fetchingReal = NO; // 恢复伪装
     };
     [self startRealInfoFetch];
 }
@@ -348,16 +352,12 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
         CTTelephonyNetworkInfo *info = [[CTTelephonyNetworkInfo alloc] init];
         CTCarrier *carrier = nil;
         if (@available(iOS 12.0, *)) {
-            NSString *service = nil;
-if (@available(iOS 13.0, *)) {
-    service = info.dataServiceIdentifier ?: [info.serviceSubscriberCellularProviders.allKeys firstObject];
-} else {
-    // iOS 12 以下可能没有 serviceSubscriberCellularProviders，使用 subscriberCellularProvider
-}
+            NSString *service = info.dataServiceIdentifier ?: [info.serviceSubscriberCellularProviders.allKeys firstObject];
             if (service) {
                 carrier = info.serviceSubscriberCellularProviders[service];
             }
-        } else {
+        }
+        if (!carrier) {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
             carrier = info.subscriberCellularProvider;
@@ -379,6 +379,7 @@ if (@available(iOS 13.0, *)) {
         self.realInfoCompletion(CLLocationCoordinate2DMake(0, 0), bs);
         self.realInfoCompletion = nil;
     }
+    fetchingReal = NO;
 }
 
 - (void)doneAction {
@@ -406,9 +407,8 @@ if (@available(iOS 13.0, *)) {
         bs.hasBaseStation = NO;
         [LocationFaker setBaseStation:bs];
     }
-    // 强制打开定位
-    [LocationFaker setEnabled:YES];
-    _enableSwitch.on = YES;
+    // 不再强制打开定位，完全由开关控制
+    [LocationFaker setEnabled:_enableSwitch.on];
 }
 
 - (void)addNewFavorite {
@@ -495,6 +495,9 @@ if (@available(iOS 13.0, *)) {
     _mncField.text = item[@"mnc"] ? [item[@"mnc"] stringValue] : @"";
     _lacField.text = item[@"lac"] ? [item[@"lac"] stringValue] : @"";
     _cidField.text = item[@"cid"] ? [item[@"cid"] stringValue] : @"";
+    // 点击列表项时自动开启定位
+    _enableSwitch.on = YES;
+    [LocationFaker setEnabled:YES];
     [self applyCoords];
     [self doneAction];
 }
@@ -514,7 +517,6 @@ if (@available(iOS 13.0, *)) {
             [LocationFaker setBaseStation:(FakeBaseStation){0,0,0,0, NO}];
             [LocationFaker setEnabled:NO];
         }
-        // 重新同步索引，确保 selectedFavoriteIndex 正确
         [LocationFaker setCoordinate:[LocationFaker currentCoordinate]];
     }
 }
