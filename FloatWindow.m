@@ -158,7 +158,7 @@
     
     AccountManager *mgr = [AccountManager shared];
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 580;  // 增加20以容纳有效期行
+    CGFloat panelH = 590;  // 增加20以容纳有效期行
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -212,7 +212,7 @@
     
     // 自动锁定 / 跳转到
     [self addLabel:@"自动锁定" frameX:leftMargin y:yPos w:80 toPanel:panel];
-    [self addSwitch:2004 on:mgr.autoLock frameX:leftMargin+85 y:yPos-5 toPanel:panel];
+    [self addSwitch:2004 on:mgr.autoLock frameX:leftMargin+70 y:yPos-5 toPanel:panel];
     UILabel *jumpLabel = [[UILabel alloc] initWithFrame:CGRectMake(secondColX, yPos, 45, 20)];
     jumpLabel.text = @"跳转到"; jumpLabel.font = [UIFont systemFontOfSize:12];
     [panel addSubview:jumpLabel];
@@ -232,12 +232,13 @@
     // 虚拟定位区域
     UIView *locLine = [[UIView alloc] initWithFrame:CGRectMake(leftMargin, yPos, panelW-30, 0.5)];
     locLine.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:locLine];
-    //yPos += 8;
-    yPos += 15;
+    yPos += 8;
+    
     UILabel *locTitle = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 100, 20)];
     locTitle.text = @"虚拟定位"; locTitle.font = [UIFont boldSystemFontOfSize:13];
     [panel addSubview:locTitle];
-    yPos += 22;
+    //yPos += 22;
+    yPos += 30;
     
     UIButton *locSettingBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     locSettingBtn.frame = CGRectMake(leftMargin, yPos, 110, 30);
@@ -251,30 +252,11 @@
     
     UILabel *locLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin + 120, yPos, panelW - leftMargin - 120 - 15, 30)];
     locLabel.text = [LocationFaker isEnabled] ? [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]] : @"当前未启用";
-    locLabel.font = [UIFont systemFontOfSize:12]; locLabel.textColor = [UIColor darkGrayColor]; locLabel.tag = 3007;
+    locLabel.font = [UIFont boldSystemFontOfSize:12]; locLabel.textColor = [UIColor darkGrayColor]; locLabel.tag = 3007;
     [panel addSubview:locLabel];
     //yPos += 36;
     yPos += 46;
-    
-    // 防封检查开关
-    [self addLabel:@"防封检查" frameX:leftMargin y:yPos w:70 toPanel:panel];
-    UISwitch *antiSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+75, yPos-5, 51, 31)];
-    antiSwitch.on = mgr.antiDetection; antiSwitch.tag = 3008;
-    [panel addSubview:antiSwitch];
-    //yPos += 32;
-    
-    // 详细日志
-    //[self addLabel:@"详细日志" frameX:leftMargin y:yPos w:70 toPanel:panel];
-    //UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+75, yPos-5, 51, 31)];
-    [self addLabel:@"详细日志" frameX:panelW/2+15 y:yPos w:70 toPanel:panel];
-    UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(panelW/2+75, yPos-5, 51, 31)];
-    detailLogSwitch.on = mgr.detailedLog; detailLogSwitch.tag = 3005;
-    [panel addSubview:detailLogSwitch];
-    yPos += 32;
-    
-    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
-    line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
-    yPos += 8;
+      
     
     // 保存/取消
     UIButton *cancelBtn = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -292,6 +274,27 @@
     [saveBtn addTarget:self action:@selector(saveAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:saveBtn];
     yPos += 40;
+    
+    //分割线
+    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
+    line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
+    yPos += 8;
+    
+    // 防封检查开关
+    [self addLabel:@"防封检查" frameX:leftMargin y:yPos w:70 toPanel:panel];
+    UISwitch *antiSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+70, yPos-5, 51, 31)];
+    antiSwitch.on = mgr.antiDetection; antiSwitch.tag = 3008;
+    [panel addSubview:antiSwitch];
+    //yPos += 32;
+    
+    // 详细日志
+    //[self addLabel:@"详细日志" frameX:leftMargin y:yPos w:70 toPanel:panel];
+    //UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+75, yPos-5, 51, 31)];
+    [self addLabel:@"详细日志" frameX:panelW/2+15 y:yPos w:70 toPanel:panel];
+    UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(panelW/2+75, yPos-5, 51, 31)];
+    detailLogSwitch.on = mgr.detailedLog; detailLogSwitch.tag = 3005;
+    [panel addSubview:detailLogSwitch];
+    yPos += 32;
     
     // 信息标签
     UILabel *infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 18)];
@@ -322,6 +325,11 @@
     [uploadBtn addTarget:self action:@selector(uploadStagedAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:uploadBtn];
     yPos += 32;  // 为有效期留空间
+    
+        //分割线
+    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
+    line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
+    yPos += 8;
     
     // 有效期显示（新增）
     NSString *expire = [LicenseManager expireDateString];
