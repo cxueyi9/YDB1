@@ -198,11 +198,7 @@
     [panel addSubview:hintLabel];
     yPos += 32;
     
-    // 服务器地址
-    [self addLabel:@"服务器地址" frameX:leftMargin y:yPos w:70 toPanel:panel];
-    [self addTextField:3003 value:mgr.serverURL frameX:leftMargin+75 y:yPos-2 w:panelW-120 toPanel:panel];
-    yPos += 34;
-    
+
     // 锁定图标 / 锁定点击
     [self addLabel:@"锁定图标" frameX:leftMargin y:yPos w:65 toPanel:panel];
     [self addSwitch:2002 on:mgr.floatLocked frameX:leftMargin+70 y:yPos-5 toPanel:panel];
@@ -276,7 +272,7 @@
     yPos += 40;
     
     //分割线
-    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
+    UIView *line1 = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
     line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
     yPos += 8;
     
@@ -305,6 +301,12 @@
     [panel addSubview:infoLabel];
     yPos += 22;
     
+    // 服务器地址
+    [self addLabel:@"服务器地址" frameX:leftMargin y:yPos w:70 toPanel:panel];
+    [self addTextField:3003 value:mgr.serverURL frameX:leftMargin+75 y:yPos-2 w:panelW-120 toPanel:panel];
+    yPos += 34;
+    
+    
     // 底部按钮
     UIButton *copyLogBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     copyLogBtn.frame = CGRectMake(15, yPos, 80, 28);
@@ -327,7 +329,7 @@
     yPos += 32;  // 为有效期留空间
     
         //分割线
-    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
+    UIView *line2 = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
     line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
     yPos += 8;
     
