@@ -158,7 +158,7 @@
     
     AccountManager *mgr = [AccountManager shared];
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 590;  // 增加20以容纳有效期行
+    CGFloat panelH = 580;  // 增加20以容纳有效期行
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -232,7 +232,8 @@
     // 虚拟定位区域
     UIView *locLine = [[UIView alloc] initWithFrame:CGRectMake(leftMargin, yPos, panelW-30, 0.5)];
     locLine.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:locLine];
-    yPos += 8;
+    //yPos += 8;
+    yPos += 15;
     UILabel *locTitle = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 100, 20)];
     locTitle.text = @"虚拟定位"; locTitle.font = [UIFont boldSystemFontOfSize:13];
     [panel addSubview:locTitle];
@@ -263,9 +264,10 @@
     //yPos += 32;
     
     // 详细日志
-    [self addLabel:@"详细日志" frameX:leftMargin y:yPos w:70 toPanel:panel];
+    //[self addLabel:@"详细日志" frameX:leftMargin y:yPos w:70 toPanel:panel];
     //UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+75, yPos-5, 51, 31)];
-    UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(panelW/2+15, yPos-5, 51, 31)];
+    [self addLabel:@"详细日志" frameX:panelW/2+15 y:yPos w:70 toPanel:panel];
+    UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(panelW/2+75, yPos-5, 51, 31)];
     detailLogSwitch.on = mgr.detailedLog; detailLogSwitch.tag = 3005;
     [panel addSubview:detailLogSwitch];
     yPos += 32;
