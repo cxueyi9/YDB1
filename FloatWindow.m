@@ -209,40 +209,25 @@
     // 自动锁定 / 跳转到
     [self addLabel:@"自动锁定" frameX:leftMargin y:yPos w:80 toPanel:panel];
     [self addSwitch:2004 on:mgr.autoLock frameX:leftMargin+70 y:yPos-5 toPanel:panel];
-    UILabel *jumpLabel = [[UILabel alloc] initWithFrame:CGRectMake(secondColX, yPos, 45, 20)];
-    jumpLabel.text = @"跳转到"; jumpLabel.font = [UIFont systemFontOfSize:12];
-    [panel addSubview:jumpLabel];
-    UITextField *jumpTF = [[UITextField alloc] initWithFrame:CGRectMake(secondColX+50, yPos-2, comboWidth-95, 26)];
-    jumpTF.borderStyle = UITextBorderStyleRoundedRect; jumpTF.font = [UIFont systemFontOfSize:13];
-    jumpTF.keyboardType = UIKeyboardTypeNumberPad; jumpTF.placeholder = @"行号"; jumpTF.tag = 3002;
-    [panel addSubview:jumpTF];
-    UIButton *goBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    goBtn.frame = CGRectMake(secondColX+comboWidth-45, yPos-2, 45, 26);
-    [goBtn setTitle:@"Go" forState:UIControlStateNormal]; goBtn.titleLabel.font = [UIFont systemFontOfSize:13];
-    goBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.15];
-    goBtn.layer.cornerRadius = 6;
-    [goBtn addTarget:self action:@selector(jumpAction:) forControlEvents:UIControlEventTouchUpInside];
-    [panel addSubview:goBtn];
+    
+    // 详细日志
+    [self addLabel:@"详细日志" frameX:secondColX+50 y:yPos w:70 toPanel:panel];
+    UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(secondColX+50+70, yPos-5, 51, 31)];
+    detailLogSwitch.on = mgr.detailedLog; detailLogSwitch.tag = 3005;
+    [panel addSubview:detailLogSwitch];
     yPos += 36;
     
-        
+   
     // 防封检查开关
     [self addLabel:@"防封检查" frameX:leftMargin y:yPos w:70 toPanel:panel];
     UISwitch *antiSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+70, yPos-5, 51, 31)];
     antiSwitch.on = mgr.antiDetection; antiSwitch.tag = 3008;
     [panel addSubview:antiSwitch];
-    yPos += 36;
+    //yPos += 36;
     
-    // 详细日志
-    //[self addLabel:@"详细日志" frameX:leftMargin y:yPos w:70 toPanel:panel];
-    //UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+75, yPos-5, 51, 31)];
-    [self addLabel:@"详细日志" frameX:leftMargin y:yPos w:70 toPanel:panel];
-    UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+70, yPos-5, 51, 31)];
-    detailLogSwitch.on = mgr.detailedLog; detailLogSwitch.tag = 3005;
-    [panel addSubview:detailLogSwitch];
-    //yPos += 40;
+
     
-        // 保存/取消
+    // 保存/取消
     //UIButton *cancelBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     //cancelBtn.frame = CGRectMake(panelW/2-110, yPos, 95, 32);
     //[cancelBtn setTitle:@"取消" forState:UIControlStateNormal]; cancelBtn.titleLabel.font = [UIFont systemFontOfSize:14];
@@ -257,8 +242,24 @@
     [saveBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal]; saveBtn.layer.cornerRadius = 8;
     [saveBtn addTarget:self action:@selector(saveAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:saveBtn];
-    yPos += 40;
+    yPos += 36;
     
+    //跳转到
+    UILabel *jumpLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 45, 20)];
+    jumpLabel.text = @"跳转到"; jumpLabel.font = [UIFont systemFontOfSize:12];
+    [panel addSubview:jumpLabel];
+    UITextField *jumpTF = [[UITextField alloc] initWithFrame:CGRectMake(leftMargin+60, yPos-2, 50, 30)];
+    jumpTF.borderStyle = UITextBorderStyleRoundedRect; jumpTF.font = [UIFont systemFontOfSize:13];
+    jumpTF.keyboardType = UIKeyboardTypeNumberPad; jumpTF.placeholder = @"行号"; jumpTF.tag = 3002;
+    [panel addSubview:jumpTF];
+    UIButton *goBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    goBtn.frame = CGRectMake(leftMargin+60+60, yPos-2, 45, 26);
+    [goBtn setTitle:@"Go" forState:UIControlStateNormal]; goBtn.titleLabel.font = [UIFont systemFontOfSize:13];
+    goBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.15];
+    goBtn.layer.cornerRadius = 6;
+    [goBtn addTarget:self action:@selector(jumpAction:) forControlEvents:UIControlEventTouchUpInside];
+    [panel addSubview:goBtn];
+    yPos += 36;
     
     // 虚拟定位区域
     UIView *locLine = [[UIView alloc] initWithFrame:CGRectMake(leftMargin, yPos, panelW-30, 0.5)];
