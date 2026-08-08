@@ -7,10 +7,9 @@
 static NSString * const kServerSecret = @"Com.Wanlianyida.Driver.app.123!";
 static NSString * const kLicenseKey = @"com.license.key";
 
-// 注册视图控制器
 @interface LicenseVC : UIViewController
-@property (nonatomic, copy) NSString *localIdentifier; // 明文
-@property (nonatomic, copy) NSString *encryptedID;      // 密文
+@property (nonatomic, copy) NSString *localIdentifier;
+@property (nonatomic, copy) NSString *encryptedID;
 @end
 
 @implementation LicenseManager
@@ -39,12 +38,12 @@ static NSString * const kLicenseKey = @"com.license.key";
     // 解密标识
     NSString *identifier = [self decryptIdentifier:encryptedID];
     if (!identifier) return NO;
+    // 与当前稳定标识比较
     if (![identifier isEqualToString:[self generateLocalIdentifier]]) return NO;
 
     long long expire = [expireStr longLongValue];
     if ([[NSDate date] timeIntervalSince1970] > expire) return NO;
 
-    // 计算 HMAC 时，使用原始注册码中的密文标识和过期时间
     NSString *computed = [self hmacForEncryptedID:encryptedID expire:expire];
     return [computed isEqualToString:hmac];
 }
@@ -75,16 +74,13 @@ static NSString * const kLicenseKey = @"com.license.key";
         [ud synchronize];
     }
     NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown";
-    NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
-    fmt.dateFormat = @"yyyyMMddHH";
-    NSString *timeStr = [fmt stringFromDate:[NSDate date]];
-    return [NSString stringWithFormat:@"%@|%@|%@", deviceID, bundleID, timeStr];
+    // 不再包含时间，只使用设备+应用标识，确保长期稳定
+    return [NSString stringWithFormat:@"%@|%@", deviceID, bundleID];
 }
 
 #pragma mark - 加密/解密
 
 + (NSData *)AESKey {
-    // 用 kServerSecret 的 SHA256 作为 AES-256 密钥
     const char *s = [kServerSecret UTF8String];
     unsigned char digest[CC_SHA256_DIGEST_LENGTH];
     CC_SHA256(s, (CC_LONG)strlen(s), digest);
@@ -94,7 +90,6 @@ static NSString * const kLicenseKey = @"com.license.key";
 + (NSString *)encryptIdentifier:(NSString *)plain {
     NSData *plainData = [plain dataUsingEncoding:NSUTF8StringEncoding];
     NSData *key = [self AESKey];
-    // IV 固定为 16 字节零（生产环境建议随机，但必须两边一致）
     char ivBytes[kCCBlockSizeAES128] = {0};
     NSData *iv = [NSData dataWithBytes:ivBytes length:kCCBlockSizeAES128];
     
@@ -193,7 +188,6 @@ static NSString * const kLicenseKey = @"com.license.key";
     [self.view addSubview:title];
     y += 50;
 
-    // 显示密文标识
     UITextView *idView = [[UITextView alloc] initWithFrame:CGRectMake(20, y, w-40, 100)];
     idView.text = self.encryptedID;
     idView.font = [UIFont systemFontOfSize:14];
