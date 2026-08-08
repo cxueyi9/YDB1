@@ -252,18 +252,20 @@
     locLabel.text = [LocationFaker isEnabled] ? [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]] : @"当前未启用";
     locLabel.font = [UIFont systemFontOfSize:12]; locLabel.textColor = [UIColor darkGrayColor]; locLabel.tag = 3007;
     [panel addSubview:locLabel];
-    yPos += 36;
+    //yPos += 36;
+    yPos += 46;
     
     // 防封检查开关
     [self addLabel:@"防封检查" frameX:leftMargin y:yPos w:70 toPanel:panel];
     UISwitch *antiSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+75, yPos-5, 51, 31)];
     antiSwitch.on = mgr.antiDetection; antiSwitch.tag = 3008;
     [panel addSubview:antiSwitch];
-    yPos += 32;
+    //yPos += 32;
     
     // 详细日志
     [self addLabel:@"详细日志" frameX:leftMargin y:yPos w:70 toPanel:panel];
-    UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+75, yPos-5, 51, 31)];
+    //UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+75, yPos-5, 51, 31)];
+    UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(panelW/2+15, yPos-5, 51, 31)];
     detailLogSwitch.on = mgr.detailedLog; detailLogSwitch.tag = 3005;
     [panel addSubview:detailLogSwitch];
     yPos += 32;
