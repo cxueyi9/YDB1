@@ -211,8 +211,8 @@
     [self addSwitch:2004 on:mgr.autoLock frameX:leftMargin+70 y:yPos-5 toPanel:panel];
     
     // 详细日志
-    [self addLabel:@"详细日志" frameX:secondColX+50 y:yPos w:70 toPanel:panel];
-    UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(secondColX+50+70, yPos-5, 51, 31)];
+    [self addLabel:@"详细日志" frameX:secondColX y:yPos w:70 toPanel:panel];
+    UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(secondColX+70, yPos-5, 51, 31)];
     detailLogSwitch.on = mgr.detailedLog; detailLogSwitch.tag = 3005;
     [panel addSubview:detailLogSwitch];
     yPos += 36;
@@ -246,14 +246,14 @@
     
     //跳转到
     UILabel *jumpLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 45, 20)];
-    jumpLabel.text = @"跳转到"; jumpLabel.font = [UIFont systemFontOfSize:12];
+    jumpLabel.text = @"跳转到"; 
     [panel addSubview:jumpLabel];
-    UITextField *jumpTF = [[UITextField alloc] initWithFrame:CGRectMake(leftMargin+60, yPos-2, 50, 30)];
+    UITextField *jumpTF = [[UITextField alloc] initWithFrame:CGRectMake(leftMargin+50, yPos-2, 50, 30)];
     jumpTF.borderStyle = UITextBorderStyleRoundedRect; jumpTF.font = [UIFont systemFontOfSize:13];
     jumpTF.keyboardType = UIKeyboardTypeNumberPad; jumpTF.placeholder = @"行号"; jumpTF.tag = 3002;
     [panel addSubview:jumpTF];
     UIButton *goBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    goBtn.frame = CGRectMake(leftMargin+60+60, yPos-2, 45, 26);
+    goBtn.frame = CGRectMake(leftMargin+50+60, yPos-2, 45, 26);
     [goBtn setTitle:@"Go" forState:UIControlStateNormal]; goBtn.titleLabel.font = [UIFont systemFontOfSize:13];
     goBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.15];
     goBtn.layer.cornerRadius = 6;
