@@ -272,7 +272,7 @@
     yPos += 40;
     
     //分割线
-    UIView *line1 = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
+    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
     line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
     yPos += 8;
     
@@ -330,7 +330,7 @@
     
         //分割线
     UIView *line2 = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
-    line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
+    line2.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line2];
     yPos += 8;
     
     // 有效期显示（新增）
