@@ -231,7 +231,7 @@
     UISwitch *antiSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+70, yPos-5, 51, 31)];
     antiSwitch.on = mgr.antiDetection; antiSwitch.tag = 3008;
     [panel addSubview:antiSwitch];
-    //yPos += 32;
+    yPos += 32;
     
     // 详细日志
     //[self addLabel:@"详细日志" frameX:leftMargin y:yPos w:70 toPanel:panel];
