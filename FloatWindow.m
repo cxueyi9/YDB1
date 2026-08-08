@@ -236,19 +236,19 @@
     // 详细日志
     //[self addLabel:@"详细日志" frameX:leftMargin y:yPos w:70 toPanel:panel];
     //UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+75, yPos-5, 51, 31)];
-    [self addLabel:@"详细日志" frameX:secondColX y:yPos w:70 toPanel:panel];
-    UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(panelW/2+75, yPos-5, 51, 31)];
+    [self addLabel:@"详细日志" frameX:leftMargin y:yPos w:70 toPanel:panel];
+    UISwitch *detailLogSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+70, yPos-5, 51, 31)];
     detailLogSwitch.on = mgr.detailedLog; detailLogSwitch.tag = 3005;
     [panel addSubview:detailLogSwitch];
-    yPos += 40;
+    //yPos += 40;
     
         // 保存/取消
-    UIButton *cancelBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    cancelBtn.frame = CGRectMake(panelW/2-110, yPos, 95, 32);
-    [cancelBtn setTitle:@"取消" forState:UIControlStateNormal]; cancelBtn.titleLabel.font = [UIFont systemFontOfSize:14];
-    cancelBtn.backgroundColor = [UIColor colorWithWhite:0.95 alpha:1]; cancelBtn.layer.cornerRadius = 8;
-    [cancelBtn addTarget:self action:@selector(cancelAction:) forControlEvents:UIControlEventTouchUpInside];
-    [panel addSubview:cancelBtn];
+    //UIButton *cancelBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    //cancelBtn.frame = CGRectMake(panelW/2-110, yPos, 95, 32);
+    //[cancelBtn setTitle:@"取消" forState:UIControlStateNormal]; cancelBtn.titleLabel.font = [UIFont systemFontOfSize:14];
+    //cancelBtn.backgroundColor = [UIColor colorWithWhite:0.95 alpha:1]; cancelBtn.layer.cornerRadius = 8;
+    //[cancelBtn addTarget:self action:@selector(cancelAction:) forControlEvents:UIControlEventTouchUpInside];
+    //[panel addSubview:cancelBtn];
     
     UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     saveBtn.frame = CGRectMake(panelW/2+15, yPos, 95, 32);
