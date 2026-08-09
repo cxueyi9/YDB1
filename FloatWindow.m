@@ -95,6 +95,8 @@
     NSDictionary *acc = mgr.accounts[mgr.currentIndex % total];
     NSString *account = acc[@"account"], *password = acc[@"password"];
     mgr.currentAccount = account;
+    // 清除设备标识缓存，确保 APP 重新获取时能被拦截
+    [mgr clearDeviceIdentifierCache];
     [mgr recordLogWithIndex:displayIndex total:total account:account];
     [mgr addRoundRecordWithIndex:displayIndex total:total account:account];
     

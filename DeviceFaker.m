@@ -16,11 +16,9 @@ static void swizzleInstanceMethod(Class cls, SEL original, SEL fake) {
 }
 
 static NSString* currentFakedID(void) {
-    return [[AccountManager shared] currentFakedID] ?: @"00000000-0000-0000-0000-000000000001";
-}
-
-static NSString* currentFakedName(void) {
-    return [[AccountManager shared] currentFakedName] ?: @"iPhone";
+    NSString *account = [AccountManager shared].currentAccount;
+    if (account.length == 0) return @"00000000-0000-0000-0000-000000000001";
+    return [[AccountManager shared] currentFakedID];
 }
 
 static NSUUID* fakedUUID(void) {
@@ -37,10 +35,13 @@ static NSUUID* fakedUUID(void) {
 }
 
 static void logFake(NSString *type, NSString *value) {
-    if ([AccountManager shared].detailedLog) {
-        NSString *account = [AccountManager shared].currentAccount ?: @"无账号";
-        NSString *msg = [NSString stringWithFormat:@"【伪装】-【%@】-【%@】-【%@】", account, type, value];
-        [[AccountManager shared] appendLog:msg];
+    NSString *account = [AccountManager shared].currentAccount ?: @"无账号";
+    NSString *msg = [NSString stringWithFormat:@"【伪装】-【%@】-【%@】-【%@】", account, type, value];
+    [[AccountManager shared] appendLog:msg];
+    if ([FakerConfig isDebugMode]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [FakerConfig showDebugMessage:[NSString stringWithFormat:@"%@ 已伪装", type]];
+        });
     }
 }
 
@@ -55,11 +56,6 @@ static void logFake(NSString *type, NSString *value) {
     @try {
         NSUUID *uuid = fakedUUID();
         logFake(@"IDFV", uuid.UUIDString);
-        if ([FakerConfig isDebugMode]) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [FakerConfig showDebugMessage:@"IDFV 已伪装"];
-            });
-        }
         return uuid;
     } @catch (NSException *exception) {
         return [[NSUUID alloc] initWithUUIDString:@"00000000-0000-0000-0000-000000000001"];
@@ -68,13 +64,8 @@ static void logFake(NSString *type, NSString *value) {
 
 - (NSString *)faker_name {
     @try {
-        NSString *name = currentFakedName();
+        NSString *name = [AccountManager shared].currentFakedName ?: @"iPhone";
         logFake(@"设备名", name);
-        if ([FakerConfig isDebugMode]) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [FakerConfig showDebugMessage:@"设备名称已伪装"];
-            });
-        }
         return name;
     } @catch (NSException *exception) {
         return @"iPhone";
@@ -86,7 +77,7 @@ static void logFake(NSString *type, NSString *value) {
 
 @end
 
-#pragma mark - ASIdentifierManager Hook
+#pragma mark - ASIdentifierManager Hook (IDFA)
 
 @interface ASIdentifierManager (Faker)
 @end
@@ -97,11 +88,6 @@ static void logFake(NSString *type, NSString *value) {
     @try {
         NSUUID *uuid = fakedUUID();
         logFake(@"IDFA", uuid.UUIDString);
-        if ([FakerConfig isDebugMode]) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [FakerConfig showDebugMessage:@"IDFA 已伪装"];
-            });
-        }
         return uuid;
     } @catch (NSException *exception) {
         return [[NSUUID alloc] initWithUUIDString:@"00000000-0000-0000-0000-000000000001"];

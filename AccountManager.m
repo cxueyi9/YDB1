@@ -1,6 +1,7 @@
 #import "AccountManager.h"
 #import <UIKit/UIKit.h>
 #import <CommonCrypto/CommonDigest.h>
+#import <Security/Security.h>   // 用于 Keychain 操作
 
 @interface AccountManager ()
 @property (nonatomic, strong) NSMutableArray<NSDictionary *> *currentRoundRecords;
@@ -50,6 +51,45 @@
     self.currentIndex = (self.currentIndex + 1) % _accounts.count;
     [self saveToFile];
     return acc;
+}
+
+
+- (void)clearDeviceIdentifierCache {
+    // 1. 清除 NSUserDefaults 中与标识可能相关的键
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    NSArray *possibleKeys = @[@"deviceId", @"IDFV", @"IDFA", @"deviceIdentifier",
+                              @"com.apple.deviceid", @"com.apple.identifier",
+                              @"com.yourapp.deviceid", @"udid", @"uuid"];
+    for (NSString *key in possibleKeys) {
+        [ud removeObjectForKey:key];
+    }
+    [ud synchronize];
+
+    // 2. 清除 Keychain 中可能存储的设备标识
+    // 一般 APP 可能用 BundleID 作为 service，我们尝试常见组合
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown";
+    NSArray *services = @[bundleID,
+                          [bundleID stringByAppendingString:@".deviceid"],
+                          [bundleID stringByAppendingString:@".identifier"],
+                          @"com.apple.deviceid",
+                          @"com.apple.identifier"];
+    for (NSString *service in services) {
+        [self deleteKeychainItemForService:service];
+    }
+}
+
+// 删除 Keychain 中指定 service 的条目
+- (void)deleteKeychainItemForService:(NSString *)service {
+    NSDictionary *query = @{
+        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrService: service,
+        (__bridge id)kSecReturnAttributes: @NO,
+        (__bridge id)kSecReturnData: @NO
+    };
+    OSStatus status = SecItemDelete((__bridge CFDictionaryRef)query);
+    if (status != errSecSuccess && status != errSecItemNotFound) {
+        NSLog(@"[clearCache] Keychain delete failed for %@, status: %d", service, (int)status);
+    }
 }
 
 - (void)updateAccountsWithText:(NSString *)text {

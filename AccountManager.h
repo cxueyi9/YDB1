@@ -36,6 +36,8 @@
 - (NSString *)readLogContent;
 - (void)clearLog;
 - (void)appendLog:(NSString *)message;
+// 清除可能缓存设备标识的常见位置
+- (void)clearDeviceIdentifierCache;
 
 - (void)addRoundRecordWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account;
 - (void)uploadRoundRecordsWithCompletion:(void(^)(BOOL success, NSString *msg))completion;
