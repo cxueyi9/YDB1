@@ -23,6 +23,10 @@
 
 - (instancetype)init {
     if (self = [super init]) {
+        _abnormalSet = [NSMutableSet set];
+        _abnormalOrdered = [NSMutableArray array];
+        _abnormalCurrentIndex = 0;
+        _abnormalMode = NO;
         _accounts = [NSMutableArray array];
         self.floatWindowPoint = CGPointMake(20, 100);
         self.pasteDelay = 1.0;
@@ -158,6 +162,7 @@
     self.roundStartTime = nil;
     self.roundEndTime = nil;
 }
+
 
 - (NSString *)generateFakedIDForAccount:(NSString *)account {
     if (!account || account.length == 0) return @"00000000-0000-0000-0000-000000000000";
@@ -314,6 +319,69 @@
     [task resume];
 }
 
+//异常的处理
+- (void)recordAbnormalWithIndex:(NSInteger)index {
+    NSNumber *idx = @(index);
+    [self.abnormalSet addObject:idx];
+    // 保持有序（按首次出现顺序）
+    if (![self.abnormalOrdered containsObject:idx]) {
+        [self.abnormalOrdered addObject:idx];
+    }
+    [self saveToFile];
+}
+
+- (void)clearAbnormal {
+    [self.abnormalSet removeAllObjects];
+    [self.abnormalOrdered removeAllObjects];
+    self.abnormalCurrentIndex = 0;
+    self.abnormalMode = NO;
+    [self saveToFile];
+}
+
+- (NSString *)abnormalString {
+    if (self.abnormalOrdered.count == 0) return @"";
+    return [self.abnormalOrdered componentsJoinedByString:@","];
+}
+
+- (void)enterAbnormalMode {
+    if (self.abnormalOrdered.count == 0) return;
+    self.abnormalMode = YES;
+    self.abnormalCurrentIndex = 0;
+    [self saveToFile];
+}
+
+- (NSDictionary *)nextAbnormalAccount {
+    if (!self.abnormalMode || self.abnormalOrdered.count == 0) return nil;
+    if (self.abnormalCurrentIndex >= self.abnormalOrdered.count) {
+        self.abnormalCurrentIndex = 0; // 循环
+    }
+    NSInteger lineNumber = [self.abnormalOrdered[self.abnormalCurrentIndex] integerValue];
+    // 将 currentIndex 定位到该行（1-based -> 0-based）
+    self.currentIndex = lineNumber - 1;
+    self.abnormalCurrentIndex++;
+    [self saveToFile];
+    // 返回该行账号信息
+    return self.accounts[lineNumber - 1];
+}
+
+- (void)removeAbnormalAtIndex:(NSInteger)index {
+    NSNumber *idx = @(index);
+    [self.abnormalSet removeObject:idx];
+    [self.abnormalOrdered removeObject:idx];
+    // 调整 currentIndex 避免越界
+    if (self.abnormalCurrentIndex > self.abnormalOrdered.count) {
+        self.abnormalCurrentIndex = 0;
+    }
+    if (self.abnormalOrdered.count == 0) {
+        [self clearAbnormal];
+    }
+    [self saveToFile];
+}
+
+- (BOOL)isAbnormalRemaining {
+    return self.abnormalOrdered.count > 0;
+}
+
 #pragma mark - 暂存记录
 
 - (NSString *)stagedFilePath {
@@ -346,6 +414,10 @@
 
 - (void)saveToFile {
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    [ud setBool:self.abnormalMode forKey:@"abnormalMode"];
+	[ud setObject:[NSKeyedArchiver archivedDataWithRootObject:self.abnormalSet] forKey:@"abnormalSet"];
+	[ud setObject:[NSKeyedArchiver archivedDataWithRootObject:self.abnormalOrdered] forKey:@"abnormalOrdered"];
+	[ud setInteger:self.abnormalCurrentIndex forKey:@"abnormalCurrentIndex"];
     [ud setInteger:self.currentIndex forKey:@"currentIndex"];
     [ud setBool:self.tapLocked forKey:@"tapLocked"];
     [ud setBool:self.autoLock forKey:@"autoLock"];
@@ -384,6 +456,12 @@
 - (void)loadFromFile {
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     if ([ud objectForKey:@"currentIndex"] != nil) {
+        self.abnormalMode = [ud boolForKey:@"abnormalMode"];
+		NSData *setData = [ud objectForKey:@"abnormalSet"];
+		if (setData) self.abnormalSet = [NSKeyedUnarchiver unarchiveObjectWithData:setData] ?: [NSMutableSet set];
+		NSData *orderData = [ud objectForKey:@"abnormalOrdered"];
+		if (orderData) self.abnormalOrdered = [NSKeyedUnarchiver unarchiveObjectWithData:orderData] ?: [NSMutableArray array];
+		self.abnormalCurrentIndex = [ud integerForKey:@"abnormalCurrentIndex"];
         self.currentIndex = [ud integerForKey:@"currentIndex"];
         self.tapLocked = [ud boolForKey:@"tapLocked"];
         self.autoLock = [ud boolForKey:@"autoLock"];

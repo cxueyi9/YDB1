@@ -9,6 +9,7 @@
 @property (nonatomic, assign) BOOL isEditing;
 @property (nonatomic, copy) NSString *previousLocName;
 @property (nonatomic, assign) BOOL locChanged;
+@property (nonatomic, assign) BOOL abnormal; // 异常标记
 @end
 
 @implementation FloatView
@@ -43,10 +44,20 @@
         [self addGestureRecognizer:tap];
         UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
         [self addGestureRecognizer:longPress];
-
+        
         self.locChanged = NO;
+        self.abnormal = NO;
     }
     return self;
+}
+
+- (void)setAbnormal:(BOOL)abnormal {
+    _abnormal = abnormal;
+    if (abnormal) {
+        self.backgroundColor = [UIColor colorWithRed:1.0 green:0.6 blue:0.6 alpha:0.9]; // 浅红色
+    } else {
+        self.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.9];   // 正常蓝色
+    }
 }
 
 - (void)handlePan:(UIPanGestureRecognizer *)pan {
@@ -73,6 +84,12 @@
     if (mgr.clickCooldown > 0 && (now - mgr.lastClickTime) < mgr.clickCooldown) {
         NSTimeInterval remaining = mgr.clickCooldown - (now - mgr.lastClickTime);
         [FloatWindow showToast:[NSString stringWithFormat:@"请 %.0f 秒后再点", remaining]];
+        // 记录异常账号
+        NSInteger displayIndex = mgr.currentIndex + 1;
+        [mgr recordAbnormalWithIndex:displayIndex];
+        if (!mgr.abnormalMode) {
+            self.abnormal = YES; // 图标变红
+        }
         return;
     }
     mgr.lastClickTime = now;
@@ -80,7 +97,43 @@
 
     NSInteger total = mgr.accounts.count;
     if (total == 0) return;
-    
+
+    // 异常处理模式
+    if (mgr.abnormalMode) {
+        if (![mgr isAbnormalRemaining]) {
+            [mgr clearAbnormal];
+            self.abnormal = NO;
+            [FloatWindow showToast:@"异常已全部处理"];
+            [mgr saveToFile];
+            [[FloatWindow shared] updateBadge];
+            return;
+        }
+        NSDictionary *acc = [mgr nextAbnormalAccount];
+        if (!acc) return;
+        NSString *account = acc[@"account"], *password = acc[@"password"];
+        mgr.currentAccount = account;
+        mgr.locationLoggedThisCycle = NO;
+        NSString *fakeID = [mgr currentFakedID];
+        [mgr appendLog:[NSString stringWithFormat:@"【异常处理】账号：%@，伪装标识：%@", account, fakeID]];
+
+        [FloatWindow showToast:[NSString stringWithFormat:@"异常 %ld/%ld，账号 %@",
+                                (long)mgr.abnormalCurrentIndex, (long)mgr.abnormalOrdered.count, account]];
+        // 执行填充（同正常流程）
+        [UIApplication sharedApplication].idleTimerDisabled = YES;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.pasteDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [UIPasteboard generalPasteboard].string = account;
+            [[UIApplication sharedApplication] sendAction:@selector(paste:) to:nil from:nil forEvent:nil];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.passwordDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [UIPasteboard generalPasteboard].string = password;
+                [[UIApplication sharedApplication] sendAction:@selector(paste:) to:nil from:nil forEvent:nil];
+                [UIApplication sharedApplication].idleTimerDisabled = NO;
+            });
+        });
+        [[FloatWindow shared] updateBadge];
+        return;
+    }
+
+    // 正常模式
     [UIApplication sharedApplication].idleTimerDisabled = YES;
     NSInteger displayIndex = mgr.currentIndex + 1;
     
@@ -94,9 +147,7 @@
     NSDictionary *acc = mgr.accounts[mgr.currentIndex % total];
     NSString *account = acc[@"account"], *password = acc[@"password"];
     mgr.currentAccount = account;
-    // 重置虚拟定位日志标志
     mgr.locationLoggedThisCycle = NO;
-    // 记录账号切换日志
     NSString *fakeID = [mgr currentFakedID];
     [mgr appendLog:[NSString stringWithFormat:@"【账号切换】账号：%@，伪装标识：%@", account, fakeID]];
 
@@ -138,7 +189,7 @@
     if (longPress.state == UIGestureRecognizerStateBegan) [self showEditPanel];
 }
 
-// 辅助方法
+// 辅助布局方法
 - (void)addLabel:(NSString *)text frameX:(CGFloat)x y:(CGFloat)y w:(CGFloat)w toPanel:(UIView *)panel {
     UILabel *lb = [[UILabel alloc] initWithFrame:CGRectMake(x, y, w, 20)];
     lb.text = text; lb.font = [UIFont systemFontOfSize:12];
@@ -169,7 +220,7 @@
     
     AccountManager *mgr = [AccountManager shared];
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 590;
+    CGFloat panelH = 620; // 增加高度容纳异常行
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -209,6 +260,29 @@
     [panel addSubview:hintLabel];
     yPos += 32;
     
+    // 异常账号编辑框和按钮
+    [self addLabel:@"异常账号" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
+    UITextField *abTF = [[UITextField alloc] initWithFrame:CGRectMake(leftMargin+labelWidth+5, yPos-2, comboWidth - labelWidth - 15, 26)];
+    abTF.borderStyle = UITextBorderStyleRoundedRect; abTF.font = [UIFont systemFontOfSize:13];
+    abTF.text = [mgr abnormalString]; abTF.tag = 3009;
+    abTF.placeholder = @"如1,3,5";
+    [panel addSubview:abTF];
+    UIButton *abHandleBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    abHandleBtn.frame = CGRectMake(secondColX, yPos-2, 45, 26);
+    [abHandleBtn setTitle:@"处理" forState:UIControlStateNormal]; abHandleBtn.titleLabel.font = [UIFont systemFontOfSize:12];
+    abHandleBtn.backgroundColor = [UIColor colorWithRed:0.9 green:0.3 blue:0.3 alpha:0.15];
+    abHandleBtn.layer.cornerRadius = 6;
+    [abHandleBtn addTarget:self action:@selector(abnormalHandleAction:) forControlEvents:UIControlEventTouchUpInside];
+    [panel addSubview:abHandleBtn];
+    UIButton *abClearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    abClearBtn.frame = CGRectMake(secondColX+50, yPos-2, 45, 26);
+    [abClearBtn setTitle:@"清空" forState:UIControlStateNormal]; abClearBtn.titleLabel.font = [UIFont systemFontOfSize:12];
+    abClearBtn.backgroundColor = [UIColor colorWithWhite:0.9 alpha:1];
+    abClearBtn.layer.cornerRadius = 6;
+    [abClearBtn addTarget:self action:@selector(abnormalClearAction:) forControlEvents:UIControlEventTouchUpInside];
+    [panel addSubview:abClearBtn];
+    yPos += 36;
+    
     // 锁定图标 / 锁定点击
     [self addLabel:@"锁定图标" frameX:leftMargin y:yPos w:65 toPanel:panel];
     [self addSwitch:2002 on:mgr.floatLocked frameX:leftMargin+70 y:yPos-5 toPanel:panel];
@@ -231,7 +305,6 @@
     antiSwitch.on = mgr.antiDetection; antiSwitch.tag = 3008;
     [panel addSubview:antiSwitch];
     
-    // 保存按钮
     UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     saveBtn.frame = CGRectMake(panelW/2+15, yPos-5, 95, 32);
     [saveBtn setTitle:@"保存" forState:UIControlStateNormal]; saveBtn.titleLabel.font = [UIFont systemFontOfSize:14];
@@ -256,8 +329,6 @@
     goBtn.layer.cornerRadius = 6;
     [goBtn addTarget:self action:@selector(jumpAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:goBtn];
-
-    // 复位按钮
     UIButton *resetBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     resetBtn.frame = CGRectMake(leftMargin+50+60+50, yPos-2, 45, 26);
     [resetBtn setTitle:@"复位" forState:UIControlStateNormal]; resetBtn.titleLabel.font = [UIFont systemFontOfSize:13];
@@ -301,7 +372,6 @@
     [panel addSubview:infoLabel];
     yPos += 32;
     
-    // 分割线
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
     line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
     yPos += 8;
@@ -431,6 +501,26 @@
 
 - (UIView *)settingsPanel { return [self.superview viewWithTag:1002]; }
 
+- (void)abnormalHandleAction:(UIButton *)sender {
+    AccountManager *mgr = [AccountManager shared];
+    [mgr enterAbnormalMode];
+    self.abnormal = YES;
+    [[FloatWindow shared] updateBadge];
+    [FloatWindow showToast:@"已进入异常处理模式"];
+    [self dismissPanel];
+}
+
+- (void)abnormalClearAction:(UIButton *)sender {
+    AccountManager *mgr = [AccountManager shared];
+    [mgr clearAbnormal];
+    self.abnormal = NO;
+    [[FloatWindow shared] updateBadge];
+    UIView *panel = [self settingsPanel];
+    UITextField *abTF = (UITextField *)[panel viewWithTag:3009];
+    abTF.text = @"";
+    [FloatWindow showToast:@"异常已清空"];
+}
+
 - (void)jumpAction:(UIButton *)sender {
     UIView *panel = [self settingsPanel];
     UITextField *jumpTF = (UITextField *)[panel viewWithTag:3002];
@@ -498,7 +588,6 @@
     mgr.autoLock = ((UISwitch *)[panel viewWithTag:2004]).on;
     mgr.detailedLog = ((UISwitch *)[panel viewWithTag:3005]).on;
     mgr.antiDetection = ((UISwitch *)[panel viewWithTag:3008]).on;
-    
     mgr.serverURL = [(UITextField *)[panel viewWithTag:3003] text] ?: mgr.serverURL;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
@@ -595,7 +684,9 @@
 - (void)updateBadge {
     AccountManager *mgr = [AccountManager shared];
     NSInteger total = mgr.accounts.count;
-    if (total > 0) {
+    if (mgr.abnormalMode && mgr.abnormalOrdered.count > 0) {
+        _floatView.badgeLabel.text = [NSString stringWithFormat:@"%ld/%ld", (long)mgr.abnormalCurrentIndex, (long)mgr.abnormalOrdered.count];
+    } else if (total > 0) {
         NSString *progressText;
         if (mgr.currentIndex == 0 && total > 0) {
             progressText = [NSString stringWithFormat:@"%ld/%ld", (long)total, (long)total];
@@ -630,18 +721,10 @@
     toast.font = [UIFont systemFontOfSize:15];
     toast.layer.cornerRadius = 8;
     toast.clipsToBounds = YES;
-    
     CGSize size = [message sizeWithAttributes:@{NSFontAttributeName: toast.font}];
-    CGFloat w = size.width + 20;
-    CGFloat h = size.height + 12;
-    toast.frame = CGRectMake((keyWindow.bounds.size.width - w)/2, y, w, h);
+    toast.frame = CGRectMake((keyWindow.bounds.size.width - size.width - 20)/2, y, size.width + 20, size.height + 12);
     [keyWindow addSubview:toast];
-    
-    [UIView animateWithDuration:0.3 delay:1.5 options:0 animations:^{
-        toast.alpha = 0;
-    } completion:^(BOOL finished) {
-        [toast removeFromSuperview];
-    }];
+    [UIView animateWithDuration:0.3 delay:1.5 options:0 animations:^{ toast.alpha = 0; } completion:^(BOOL finished) { [toast removeFromSuperview]; }];
 }
 
 @end
