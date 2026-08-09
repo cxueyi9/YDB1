@@ -16,9 +16,7 @@ static void swizzleInstanceMethod(Class cls, SEL original, SEL fake) {
 }
 
 static NSString* currentFakedID(void) {
-    NSString *account = [AccountManager shared].currentAccount;
-    if (account.length == 0) return @"00000000-0000-0000-0000-000000000001";
-    return [[AccountManager shared] currentFakedID];
+    return [[AccountManager shared] currentFakedID] ?: @"00000000-0000-0000-0000-000000000001";
 }
 
 static NSUUID* fakedUUID(void) {
@@ -45,8 +43,33 @@ static void logFake(NSString *type, NSString *value) {
     }
 }
 
-#pragma mark - UIDevice Hook
+#pragma mark - NSUserDefaults Hook（关键新增）
+static id (*orig_NSUserDefaults_objectForKey)(id self, SEL _cmd, NSString *key);
+static id replaced_NSUserDefaults_objectForKey(id self, SEL _cmd, NSString *key) {
+    // 拦截可疑键，返回伪装标识
+    if ([key isEqualToString:@"deviceId"] ||
+        [key isEqualToString:@"IDFV"] ||
+        [key isEqualToString:@"IDFA"] ||
+        [key isEqualToString:@"deviceIdentifier"] ||
+        [key hasPrefix:@"com.apple."]) {
+        return currentFakedID();
+    }
+    return orig_NSUserDefaults_objectForKey(self, _cmd, key);
+}
 
+static NSString* (*orig_NSUserDefaults_stringForKey)(id self, SEL _cmd, NSString *key);
+static NSString* replaced_NSUserDefaults_stringForKey(id self, SEL _cmd, NSString *key) {
+    if ([key isEqualToString:@"deviceId"] ||
+        [key isEqualToString:@"IDFV"] ||
+        [key isEqualToString:@"IDFA"] ||
+        [key isEqualToString:@"deviceIdentifier"] ||
+        [key hasPrefix:@"com.apple."]) {
+        return currentFakedID();
+    }
+    return orig_NSUserDefaults_stringForKey(self, _cmd, key);
+}
+
+#pragma mark - UIDevice Hook
 @interface UIDevice (Faker)
 @end
 
@@ -77,8 +100,7 @@ static void logFake(NSString *type, NSString *value) {
 
 @end
 
-#pragma mark - ASIdentifierManager Hook (IDFA)
-
+#pragma mark - ASIdentifierManager Hook
 @interface ASIdentifierManager (Faker)
 @end
 
@@ -101,15 +123,30 @@ static void logFake(NSString *type, NSString *value) {
 @implementation DeviceFaker
 
 + (void)install {
+    // UIDevice
     swizzleInstanceMethod([UIDevice class], @selector(identifierForVendor), @selector(faker_identifierForVendor));
     swizzleInstanceMethod([UIDevice class], @selector(name), @selector(faker_name));
     swizzleInstanceMethod([UIDevice class], @selector(model), @selector(faker_model));
     swizzleInstanceMethod([UIDevice class], @selector(systemVersion), @selector(faker_systemVersion));
 
+    // ASIdentifierManager
     Class asIdManager = NSClassFromString(@"ASIdentifierManager");
     if (asIdManager) {
         swizzleInstanceMethod(asIdManager, @selector(advertisingIdentifier), @selector(faker_advertisingIdentifier));
         swizzleInstanceMethod(asIdManager, @selector(isAdvertisingTrackingEnabled), @selector(faker_isAdvertisingTrackingEnabled));
+    }
+
+    // NSUserDefaults Hook（新增）
+    Class udClass = [NSUserDefaults class];
+    Method m1 = class_getInstanceMethod(udClass, @selector(objectForKey:));
+    if (m1) {
+        orig_NSUserDefaults_objectForKey = (id(*)(id, SEL, NSString*))method_getImplementation(m1);
+        method_setImplementation(m1, (IMP)replaced_NSUserDefaults_objectForKey);
+    }
+    Method m2 = class_getInstanceMethod(udClass, @selector(stringForKey:));
+    if (m2) {
+        orig_NSUserDefaults_stringForKey = (NSString* (*)(id, SEL, NSString*))method_getImplementation(m2);
+        method_setImplementation(m2, (IMP)replaced_NSUserDefaults_stringForKey);
     }
 }
 
