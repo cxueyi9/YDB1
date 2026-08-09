@@ -102,20 +102,16 @@
         if (![mgr isAbnormalRemaining]) {
             [mgr clearAbnormal];
             self.abnormal = NO;
-            [FloatWindow showToast:@"异常已全部处理"];
-            if (mgr.autoLock) {
-                mgr.tapLocked = YES;
-            }
+            if (mgr.autoLock) mgr.tapLocked = YES;
             [mgr saveToFile];
             [[FloatWindow shared] updateBadge];
-            // 更新编辑框
             UIView *panel = [self settingsPanel];
             UITextField *abTF = (UITextField *)[panel viewWithTag:3009];
             if (abTF) abTF.text = @"";
+            [FloatWindow showToast:@"异常已全部处理"];
             return;
         }
-        // 获取当前待处理的异常行号（1-based）
-        NSInteger targetLine = [mgr.abnormalOrdered[mgr.abnormalCurrentIndex] integerValue];
+
         NSDictionary *acc = [mgr nextAbnormalAccount];
         if (!acc) return;
         NSString *account = acc[@"account"], *password = acc[@"password"];
@@ -124,8 +120,11 @@
         NSString *fakeID = [mgr currentFakedID];
         [mgr appendLog:[NSString stringWithFormat:@"【异常处理】账号：%@，伪装标识：%@", account, fakeID]];
 
+        // 显示当前异常进度（处理前）
+        NSInteger handled = mgr.abnormalCurrentIndex; // 已经处理完的数量
+        NSInteger totalAb = mgr.abnormalOrdered.count;
         [FloatWindow showToast:[NSString stringWithFormat:@"异常 %ld/%ld，账号 %@",
-                                (long)mgr.abnormalCurrentIndex, (long)mgr.abnormalOrdered.count, account]];
+                                (long)handled, (long)totalAb, account]];
         // 填充操作
         [UIApplication sharedApplication].idleTimerDisabled = YES;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.pasteDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -138,9 +137,8 @@
             });
         });
 
-        // 成功处理一个异常，从列表中移除该账号
-        [mgr removeAbnormalAtIndex:targetLine];
-        [mgr saveToFile];
+        // 处理完当前异常，立即移除（索引已在 nextAbnormalAccount 中后移，需回退）
+        [mgr removeLastHandledAbnormal];   // 新增方法
         [[FloatWindow shared] updateBadge];
 
         // 检查是否全部处理完
@@ -287,8 +285,8 @@
     [panel addSubview:hintLabel];
     yPos += 32;
     
-    // 异常账号编辑框和按钮（拉长编辑框）
-    CGFloat btnWidth = 90; // 两个按钮总宽度
+    // 异常账号编辑框和按钮
+    CGFloat btnWidth = 100;
     CGFloat abTFWidth = panelW - 2*leftMargin - labelWidth - btnWidth - 25;
     [self addLabel:@"异常账号" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
     UITextField *abTF = [[UITextField alloc] initWithFrame:CGRectMake(leftMargin+labelWidth+5, yPos-2, abTFWidth, 26)];
@@ -366,7 +364,7 @@
     [resetBtn addTarget:self action:@selector(resetAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:resetBtn];
     yPos += 36;
-    
+      
     // 虚拟定位区域
     UIView *locLine = [[UIView alloc] initWithFrame:CGRectMake(leftMargin, yPos, panelW-30, 0.5)];
     locLine.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:locLine];

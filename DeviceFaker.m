@@ -1,6 +1,7 @@
 #import "DeviceFaker.h"
 #import "FakerConfig.h"
 #import "AccountManager.h"
+#import "FloatWindow.h"
 #import <UIKit/UIKit.h>
 #import <AdSupport/AdSupport.h>
 #import <objc/runtime.h>
@@ -38,15 +39,14 @@ static void logFake(NSString *type, NSString *value) {
     [[AccountManager shared] appendLog:msg];
     if ([FakerConfig isDebugMode]) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [FakerConfig showDebugMessage:[NSString stringWithFormat:@"%@ 已伪装", type]];
+            [FloatWindow showToast:[NSString stringWithFormat:@"%@ 已伪装", type]];
         });
     }
 }
 
-#pragma mark - NSUserDefaults Hook（关键新增）
+#pragma mark - NSUserDefaults Hook（拦截常见标识键）
 static id (*orig_NSUserDefaults_objectForKey)(id self, SEL _cmd, NSString *key);
 static id replaced_NSUserDefaults_objectForKey(id self, SEL _cmd, NSString *key) {
-    // 拦截可疑键，返回伪装标识
     if ([key isEqualToString:@"deviceId"] ||
         [key isEqualToString:@"IDFV"] ||
         [key isEqualToString:@"IDFA"] ||
@@ -100,7 +100,7 @@ static NSString* replaced_NSUserDefaults_stringForKey(id self, SEL _cmd, NSStrin
 
 @end
 
-#pragma mark - ASIdentifierManager Hook
+#pragma mark - ASIdentifierManager Hook (IDFA)
 @interface ASIdentifierManager (Faker)
 @end
 
@@ -136,7 +136,7 @@ static NSString* replaced_NSUserDefaults_stringForKey(id self, SEL _cmd, NSStrin
         swizzleInstanceMethod(asIdManager, @selector(isAdvertisingTrackingEnabled), @selector(faker_isAdvertisingTrackingEnabled));
     }
 
-    // NSUserDefaults Hook（新增）
+    // NSUserDefaults 拦截
     Class udClass = [NSUserDefaults class];
     Method m1 = class_getInstanceMethod(udClass, @selector(objectForKey:));
     if (m1) {

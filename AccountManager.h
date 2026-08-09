@@ -72,5 +72,6 @@
 - (NSDictionary *)nextAbnormalAccount;                   // 返回当前待处理的异常账号信息，并移动指针
 - (void)removeAbnormalAtIndex:(NSInteger)index;           // 处理完一个异常后，若不再异常则移除
 - (BOOL)isAbnormalRemaining;                             // 是否还有未处理的异常
-
+// 移除最后一个被处理的异常（内部调用，配合 nextAbnormalAccount 使用）
+- (void)removeLastHandledAbnormal;
 @end

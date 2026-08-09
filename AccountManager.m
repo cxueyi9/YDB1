@@ -58,7 +58,18 @@
     return acc;
 }
 
-
+- (void)removeLastHandledAbnormal {
+    if (self.abnormalCurrentIndex == 0) return; // 未处理过
+    NSInteger lastIndex = self.abnormalCurrentIndex - 1;
+    if (lastIndex < self.abnormalOrdered.count) {
+        NSNumber *removed = self.abnormalOrdered[lastIndex];
+        [self.abnormalSet removeObject:removed];
+        [self.abnormalOrdered removeObjectAtIndex:lastIndex];
+        // 回退索引，因为移除后后续元素前移
+        self.abnormalCurrentIndex = lastIndex;
+        [self saveToFile];
+    }
+}
 - (void)clearDeviceIdentifierCache {
     // 1. 清除 NSUserDefaults 中与标识可能相关的键
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
@@ -353,14 +364,14 @@
 - (NSDictionary *)nextAbnormalAccount {
     if (!self.abnormalMode || self.abnormalOrdered.count == 0) return nil;
     if (self.abnormalCurrentIndex >= self.abnormalOrdered.count) {
-        self.abnormalCurrentIndex = 0; // 循环
+        self.abnormalCurrentIndex = 0;
     }
     NSInteger lineNumber = [self.abnormalOrdered[self.abnormalCurrentIndex] integerValue];
-    // 将 currentIndex 定位到该行（1-based -> 0-based）
+    // 先记录当前索引，准备下次移除时使用
+    // currentIndex 先移动到下一位
     self.currentIndex = lineNumber - 1;
     self.abnormalCurrentIndex++;
     [self saveToFile];
-    // 返回该行账号信息
     return self.accounts[lineNumber - 1];
 }
 
