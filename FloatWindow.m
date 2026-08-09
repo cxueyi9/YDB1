@@ -9,7 +9,7 @@
 @property (nonatomic, assign) BOOL isEditing;
 @property (nonatomic, copy) NSString *previousLocName;
 @property (nonatomic, assign) BOOL locChanged;
-@property (nonatomic, assign) BOOL abnormal; // 异常标记
+@property (nonatomic, assign) BOOL abnormal;
 @end
 
 @implementation FloatView
@@ -54,9 +54,9 @@
 - (void)setAbnormal:(BOOL)abnormal {
     _abnormal = abnormal;
     if (abnormal) {
-        self.backgroundColor = [UIColor colorWithRed:1.0 green:0.6 blue:0.6 alpha:0.9]; // 浅红色
+        self.backgroundColor = [UIColor colorWithRed:1.0 green:0.6 blue:0.6 alpha:0.9];
     } else {
-        self.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.9];   // 正常蓝色
+        self.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.9];
     }
 }
 
@@ -84,11 +84,10 @@
     if (mgr.clickCooldown > 0 && (now - mgr.lastClickTime) < mgr.clickCooldown) {
         NSTimeInterval remaining = mgr.clickCooldown - (now - mgr.lastClickTime);
         [FloatWindow showToast:[NSString stringWithFormat:@"请 %.0f 秒后再点", remaining]];
-        // 记录异常账号
         NSInteger displayIndex = mgr.currentIndex + 1;
         [mgr recordAbnormalWithIndex:displayIndex];
         if (!mgr.abnormalMode) {
-            self.abnormal = YES; // 图标变红
+            self.abnormal = YES;
         }
         return;
     }
@@ -104,10 +103,19 @@
             [mgr clearAbnormal];
             self.abnormal = NO;
             [FloatWindow showToast:@"异常已全部处理"];
+            if (mgr.autoLock) {
+                mgr.tapLocked = YES;
+            }
             [mgr saveToFile];
             [[FloatWindow shared] updateBadge];
+            // 更新编辑框
+            UIView *panel = [self settingsPanel];
+            UITextField *abTF = (UITextField *)[panel viewWithTag:3009];
+            if (abTF) abTF.text = @"";
             return;
         }
+        // 获取当前待处理的异常行号（1-based）
+        NSInteger targetLine = [mgr.abnormalOrdered[mgr.abnormalCurrentIndex] integerValue];
         NSDictionary *acc = [mgr nextAbnormalAccount];
         if (!acc) return;
         NSString *account = acc[@"account"], *password = acc[@"password"];
@@ -118,7 +126,7 @@
 
         [FloatWindow showToast:[NSString stringWithFormat:@"异常 %ld/%ld，账号 %@",
                                 (long)mgr.abnormalCurrentIndex, (long)mgr.abnormalOrdered.count, account]];
-        // 执行填充（同正常流程）
+        // 填充操作
         [UIApplication sharedApplication].idleTimerDisabled = YES;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.pasteDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [UIPasteboard generalPasteboard].string = account;
@@ -129,7 +137,26 @@
                 [UIApplication sharedApplication].idleTimerDisabled = NO;
             });
         });
+
+        // 成功处理一个异常，从列表中移除该账号
+        [mgr removeAbnormalAtIndex:targetLine];
+        [mgr saveToFile];
         [[FloatWindow shared] updateBadge];
+
+        // 检查是否全部处理完
+        if (![mgr isAbnormalRemaining]) {
+            [mgr clearAbnormal];
+            self.abnormal = NO;
+            if (mgr.autoLock) {
+                mgr.tapLocked = YES;
+            }
+            [mgr saveToFile];
+            [[FloatWindow shared] updateBadge];
+            UIView *panel = [self settingsPanel];
+            UITextField *abTF = (UITextField *)[panel viewWithTag:3009];
+            if (abTF) abTF.text = @"";
+            [FloatWindow showToast:@"异常已全部处理，已自动锁定"];
+        }
         return;
     }
 
@@ -220,7 +247,7 @@
     
     AccountManager *mgr = [AccountManager shared];
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 620; // 增加高度容纳异常行
+    CGFloat panelH = 620;
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -260,22 +287,24 @@
     [panel addSubview:hintLabel];
     yPos += 32;
     
-    // 异常账号编辑框和按钮
+    // 异常账号编辑框和按钮（拉长编辑框）
+    CGFloat btnWidth = 90; // 两个按钮总宽度
+    CGFloat abTFWidth = panelW - 2*leftMargin - labelWidth - btnWidth - 25;
     [self addLabel:@"异常账号" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
-    UITextField *abTF = [[UITextField alloc] initWithFrame:CGRectMake(leftMargin+labelWidth+5, yPos-2, comboWidth - labelWidth - 15, 26)];
+    UITextField *abTF = [[UITextField alloc] initWithFrame:CGRectMake(leftMargin+labelWidth+5, yPos-2, abTFWidth, 26)];
     abTF.borderStyle = UITextBorderStyleRoundedRect; abTF.font = [UIFont systemFontOfSize:13];
     abTF.text = [mgr abnormalString]; abTF.tag = 3009;
     abTF.placeholder = @"如1,3,5";
     [panel addSubview:abTF];
     UIButton *abHandleBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    abHandleBtn.frame = CGRectMake(secondColX, yPos-2, 45, 26);
+    abHandleBtn.frame = CGRectMake(leftMargin+labelWidth+5+abTFWidth+5, yPos-2, 45, 26);
     [abHandleBtn setTitle:@"处理" forState:UIControlStateNormal]; abHandleBtn.titleLabel.font = [UIFont systemFontOfSize:12];
     abHandleBtn.backgroundColor = [UIColor colorWithRed:0.9 green:0.3 blue:0.3 alpha:0.15];
     abHandleBtn.layer.cornerRadius = 6;
     [abHandleBtn addTarget:self action:@selector(abnormalHandleAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:abHandleBtn];
     UIButton *abClearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    abClearBtn.frame = CGRectMake(secondColX+50, yPos-2, 45, 26);
+    abClearBtn.frame = CGRectMake(leftMargin+labelWidth+5+abTFWidth+55, yPos-2, 45, 26);
     [abClearBtn setTitle:@"清空" forState:UIControlStateNormal]; abClearBtn.titleLabel.font = [UIFont systemFontOfSize:12];
     abClearBtn.backgroundColor = [UIColor colorWithWhite:0.9 alpha:1];
     abClearBtn.layer.cornerRadius = 6;
@@ -376,7 +405,6 @@
     line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
     yPos += 8;
     
-    // 服务器地址
     [self addLabel:@"服务器地址" frameX:leftMargin y:yPos w:70 toPanel:panel];
     [self addTextField:3003 value:mgr.serverURL frameX:leftMargin+75 y:yPos-2 w:panelW-120 toPanel:panel];
     yPos += 30;
@@ -429,7 +457,6 @@
     
     BOOL hasStart = (mgr.roundStartTime != nil);
     BOOL hasEnd = (mgr.roundEndTime != nil);
-    BOOL isLast = (mgr.currentIndex == 0 && mgr.accounts.count > 0);
     
     if (!hasStart && !hasEnd) {
         label.text = @"待开始";
@@ -702,7 +729,7 @@
 
 // 普通 Toast（稍上移）
 + (void)showToast:(NSString *)message {
-    [self showToastMessage:message atY:60];
+    [self showToastMessage:message atY:40];
 }
 
 // 虚拟定位专用 Toast（稍下移）
