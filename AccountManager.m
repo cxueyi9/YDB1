@@ -39,6 +39,7 @@
         self.roundStartTime = nil;
         self.roundEndTime = nil;
         self.antiDetection = NO;
+        self.locationLoggedThisCycle = NO;
     }
     return self;
 }

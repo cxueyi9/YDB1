@@ -85,14 +85,17 @@ static void syncIndexWithCurrentCoordinate() {
 // ========== Hook CLLocation coordinate ==========
 static CLLocationCoordinate2D (*orig_coordinate)(id self, SEL _cmd);
 static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
-    if (enabled && !fetchingReal) {   // 正在获取真实位置时不伪装
+    if (enabled && !fetchingReal) {
         NSString *name = [LocationFaker currentName];
         NSString *hint = fakedBS.hasBaseStation ? @"基站信息已伪装" : @"GPS定位已伪装";
+        // 屏幕提示（不受限制）
         dispatch_async(dispatch_get_main_queue(), ^{
-            [FloatWindow showToast:[NSString stringWithFormat:@"%@ %@", hint, name]];
+            [FloatWindow showLocationToast:[NSString stringWithFormat:@"%@ %@", hint, name]];
         });
-        if ([AccountManager shared].detailedLog) {
+        // 日志记录（本周期只写一次）
+        if ([AccountManager shared].detailedLog && ![AccountManager shared].locationLoggedThisCycle) {
             [[AccountManager shared] appendLog:[NSString stringWithFormat:@"【定位伪装】%@", name]];
+            [AccountManager shared].locationLoggedThisCycle = YES;
         }
         return fakedCoord;
     }

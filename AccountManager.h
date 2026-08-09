@@ -7,7 +7,7 @@
 
 @property (nonatomic, strong, readonly) NSArray<NSDictionary *> *accounts;
 @property (nonatomic, assign) NSInteger currentIndex;
-
+@property (nonatomic, assign) BOOL locationLoggedThisCycle; // 本周期是否已记录定位日志
 @property (nonatomic, assign) CGPoint floatWindowPoint;
 @property (nonatomic, assign) NSTimeInterval pasteDelay;
 @property (nonatomic, assign) NSTimeInterval passwordDelay;

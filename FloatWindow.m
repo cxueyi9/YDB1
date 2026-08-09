@@ -8,7 +8,7 @@
 @property (nonatomic, weak) UILabel *badgeLabel;
 @property (nonatomic, assign) BOOL isEditing;
 @property (nonatomic, copy) NSString *previousLocName;
-@property (nonatomic, assign) BOOL locChanged;      // 定位是否被修改（影响“已修改定位”前缀）
+@property (nonatomic, assign) BOOL locChanged;
 @end
 
 @implementation FloatView
@@ -84,22 +84,22 @@
     [UIApplication sharedApplication].idleTimerDisabled = YES;
     NSInteger displayIndex = mgr.currentIndex + 1;
     
-    // 重新开始新的一轮
     if (displayIndex == 1) {
         mgr.roundStartTime = [NSDate date];
         mgr.roundEndTime = nil;
-        self.locChanged = NO;            // 清除定位修改标记
+        self.locChanged = NO;
         [mgr saveToFile];
     }
     
     NSDictionary *acc = mgr.accounts[mgr.currentIndex % total];
     NSString *account = acc[@"account"], *password = acc[@"password"];
     mgr.currentAccount = account;
-    // 清除缓存并发送内存警告，促使 APP 重新获取标识
-    [mgr clearDeviceIdentifierCache];
-    [[NSNotificationCenter defaultCenter] postNotificationName:UIApplicationDidReceiveMemoryWarningNotification object:nil];
-    // 清除设备标识缓存，确保 APP 重新获取时能被拦截
-    [mgr clearDeviceIdentifierCache];
+    // 重置虚拟定位日志标志
+    mgr.locationLoggedThisCycle = NO;
+    // 记录账号切换日志
+    NSString *fakeID = [mgr currentFakedID];
+    [mgr appendLog:[NSString stringWithFormat:@"【账号切换】账号：%@，伪装标识：%@", account, fakeID]];
+
     [mgr recordLogWithIndex:displayIndex total:total account:account];
     [mgr addRoundRecordWithIndex:displayIndex total:total account:account];
     
@@ -109,13 +109,10 @@
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     
-    // 本轮结束（填充后 currentIndex == 0）
     if (mgr.currentIndex == 0) {
         mgr.roundEndTime = [NSDate date];
-        self.locChanged = NO;            // 结束本轮，清除定位修改标记
-        if (mgr.autoLock) {
-            mgr.tapLocked = YES;
-        }
+        self.locChanged = NO;
+        if (mgr.autoLock) mgr.tapLocked = YES;
         [mgr saveToFile];
         
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((mgr.pasteDelay + mgr.passwordDelay + 2.0) * NSEC_PER_SEC)),
@@ -372,13 +369,11 @@
     NSString *prefix = self.locChanged ? @"已修改定位，" : @"";
     
     if (hasEnd) {
-        // 已结束
         label.text = [NSString stringWithFormat:@"%@【已结束】，启动：%@，结束：%@",
                       prefix,
                       [fmt stringFromDate:mgr.roundStartTime],
                       [fmt stringFromDate:mgr.roundEndTime]];
     } else if (hasStart) {
-        // 进行中
         label.text = [NSString stringWithFormat:@"%@【进行中】，启动：%@",
                       prefix,
                       [fmt stringFromDate:mgr.roundStartTime]];
@@ -421,9 +416,7 @@
         
         NSString *newLocName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
         if (![newLocName isEqualToString:self.previousLocName]) {
-            // 定位发生变化，标记为修改过
             self.locChanged = YES;
-            // 不清空启动时间！ 只改变标志
         }
         
         UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
@@ -450,21 +443,16 @@
     if (targetLine > total) targetLine = total;
     
     if (targetLine == 1) {
-        // 跳转到第一个：开启新一轮
         mgr.currentIndex = 1;
         mgr.roundStartTime = [NSDate date];
         mgr.roundEndTime = nil;
         self.locChanged = NO;
     } else if (targetLine == total) {
-        // 跳转到最后一个：标记结束
         mgr.currentIndex = 0;
-        if (!mgr.roundStartTime) {
-            mgr.roundStartTime = [NSDate date]; // 如果没有启动时间，给一个默认值
-        }
+        if (!mgr.roundStartTime) mgr.roundStartTime = [NSDate date];
         mgr.roundEndTime = [NSDate date];
         self.locChanged = NO;
     } else {
-        // 中间行号：只改变索引，不改变时间
         mgr.currentIndex = targetLine;
     }
     
@@ -480,9 +468,7 @@
     
     mgr.currentIndex = 0;
     mgr.roundEndTime = [NSDate date];
-    if (!mgr.roundStartTime) {
-        mgr.roundStartTime = [NSDate date];
-    }
+    if (!mgr.roundStartTime) mgr.roundStartTime = [NSDate date];
     self.locChanged = NO;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
@@ -496,7 +482,7 @@
     NSString *newText = tv.text;
     if (![newText isEqualToString:[mgr exportAccountsText]]) {
         [mgr updateAccountsWithText:newText];
-        self.locChanged = NO;   // 修改账号列表重置定位修改标记
+        self.locChanged = NO;
     }
     
     mgr.pasteDelay = [[(UITextField *)[panel viewWithTag:2000] text] doubleValue];
@@ -623,7 +609,17 @@
     _floatView.locNameLabel.text = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
 }
 
+// 普通 Toast（稍上移）
 + (void)showToast:(NSString *)message {
+    [self showToastMessage:message atY:60];
+}
+
+// 虚拟定位专用 Toast（稍下移）
++ (void)showLocationToast:(NSString *)message {
+    [self showToastMessage:message atY:90];
+}
+
++ (void)showToastMessage:(NSString *)message atY:(CGFloat)y {
     UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
     if (!keyWindow) return;
     UILabel *toast = [[UILabel alloc] init];
@@ -634,10 +630,18 @@
     toast.font = [UIFont systemFontOfSize:15];
     toast.layer.cornerRadius = 8;
     toast.clipsToBounds = YES;
+    
     CGSize size = [message sizeWithAttributes:@{NSFontAttributeName: toast.font}];
-    toast.frame = CGRectMake((keyWindow.bounds.size.width - size.width - 20)/2, 80, size.width + 20, size.height + 12);
+    CGFloat w = size.width + 20;
+    CGFloat h = size.height + 12;
+    toast.frame = CGRectMake((keyWindow.bounds.size.width - w)/2, y, w, h);
     [keyWindow addSubview:toast];
-    [UIView animateWithDuration:0.3 delay:1.5 options:0 animations:^{ toast.alpha = 0; } completion:^(BOOL finished) { [toast removeFromSuperview]; }];
+    
+    [UIView animateWithDuration:0.3 delay:1.5 options:0 animations:^{
+        toast.alpha = 0;
+    } completion:^(BOOL finished) {
+        [toast removeFromSuperview];
+    }];
 }
 
 @end

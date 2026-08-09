@@ -1,4 +1,6 @@
 #import "AntiDetection.h"
+#import "FloatWindow.h"
+#import "AccountManager.h"
 #import <UIKit/UIKit.h>
 #import <sys/sysctl.h>
 #import <dlfcn.h>
@@ -17,7 +19,6 @@
 #define LC_SEGMENT_ARCH_DEPENDENT LC_SEGMENT_64
 #endif
 
-// 如果 SDK 未定义 SEG_DATA_CONST，手动定义
 #ifndef SEG_DATA_CONST
 #define SEG_DATA_CONST "__DATA_CONST"
 #endif
@@ -198,6 +199,22 @@ static BOOL isPathBlocked(const char *path) {
     return NO;
 }
 
+static void logBlock(const char *message) {
+    // 防抖：同一秒内相同消息不重复记录
+    static NSString *lastMsg = nil;
+    static NSTimeInterval lastTime = 0;
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    NSString *currentMsg = [NSString stringWithUTF8String:message];
+    if ([currentMsg isEqualToString:lastMsg] && (now - lastTime < 0.5)) return;
+    lastMsg = currentMsg;
+    lastTime = now;
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [FloatWindow showToast:[NSString stringWithFormat:@"防封拦截：%@", currentMsg]];
+        [[AccountManager shared] appendLog:[NSString stringWithFormat:@"【防封拦截】%@", currentMsg]];
+    });
+}
+
 // ========== 原始函数指针 ==========
 static int (*orig_access)(const char *, int);
 static int (*orig_stat)(const char *, struct stat *);
@@ -209,22 +226,38 @@ static const char *(*orig_dyld_get_image_name)(uint32_t image_index);
 
 // ========== 替换函数 ==========
 static int my_access(const char *path, int mode) {
-    if (isPathBlocked(path)) { errno = ENOENT; return -1; }
+    if (isPathBlocked(path)) {
+        logBlock(path);
+        errno = ENOENT;
+        return -1;
+    }
     return orig_access(path, mode);
 }
 
 static int my_stat(const char *path, struct stat *buf) {
-    if (isPathBlocked(path)) { errno = ENOENT; return -1; }
+    if (isPathBlocked(path)) {
+        logBlock(path);
+        errno = ENOENT;
+        return -1;
+    }
     return orig_stat(path, buf);
 }
 
 static int my_lstat(const char *path, struct stat *buf) {
-    if (isPathBlocked(path)) { errno = ENOENT; return -1; }
+    if (isPathBlocked(path)) {
+        logBlock(path);
+        errno = ENOENT;
+        return -1;
+    }
     return orig_lstat(path, buf);
 }
 
 static int my_open(const char *path, int flags, ...) {
-    if (isPathBlocked(path)) { errno = ENOENT; return -1; }
+    if (isPathBlocked(path)) {
+        logBlock(path);
+        errno = ENOENT;
+        return -1;
+    }
     va_list args;
     va_start(args, flags);
     mode_t mode = va_arg(args, int);
@@ -238,11 +271,12 @@ static int my_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void
         if (ret == 0 && oldp) {
             struct kinfo_proc *info = (struct kinfo_proc *)oldp;
             info->kp_proc.p_flag &= ~P_TRACED;
+            logBlock("调试器检测已拦截");
         }
         return ret;
     }
-    // 拦截进程列表获取
     if (name[0] == CTL_KERN && name[1] == KERN_PROC) {
+        logBlock("进程列表获取已拦截");
         errno = EPERM;
         return -1;
     }
@@ -252,6 +286,7 @@ static int my_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void
 static char *my_getenv(const char *name) {
     if (strcmp(name, "DYLD_INSERT_LIBRARIES") == 0 ||
         strcmp(name, "DYLD_FORCE_FLAT_NAMESPACE") == 0) {
+        logBlock(name);
         return NULL;
     }
     return orig_getenv(name);
@@ -261,6 +296,7 @@ static const char *my_dyld_get_image_name(uint32_t image_index) {
     const char *name = orig_dyld_get_image_name(image_index);
     if (name && (strstr(name, "MobileSubstrate") || strstr(name, "Substitute") ||
                  strstr(name, "frida") || strstr(name, "cycript"))) {
+        logBlock("检测到注入库，已隐藏");
         return NULL;
     }
     return name;
@@ -269,7 +305,10 @@ static const char *my_dyld_get_image_name(uint32_t image_index) {
 // ========== NSFileManager Hook ==========
 static BOOL (*orig_fileExistsAtPath)(id, SEL, NSString *);
 static BOOL replaced_fileExistsAtPath(id self, SEL _cmd, NSString *path) {
-    if (isPathBlocked([path UTF8String])) return NO;
+    if (isPathBlocked([path UTF8String])) {
+        logBlock([path UTF8String]);
+        return NO;
+    }
     return orig_fileExistsAtPath(self, _cmd, path);
 }
 
