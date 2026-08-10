@@ -416,6 +416,58 @@
     return identifier;
 }
 
+- (void)setAbnormalFromString:(NSString *)str {
+    [self.abnormalSet removeAllObjects];
+    [self.abnormalOrdered removeAllObjects];
+    NSArray *parts = [str componentsSeparatedByString:@","];
+    for (NSString *part in parts) {
+        NSString *trimmed = [part stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        if (trimmed.length == 0) continue;
+        NSInteger num = [trimmed integerValue];
+        if (num > 0 && num <= self.accounts.count) {
+            NSNumber *n = @(num);
+            [self.abnormalSet addObject:n];
+            if (![self.abnormalOrdered containsObject:n]) {
+                [self.abnormalOrdered addObject:n];
+            }
+        }
+    }
+    self.abnormalCurrentIndex = 0;
+    [self saveToFile];
+}
+
+// 修正 nextAbnormalAccount 边界和移除逻辑
+- (NSDictionary *)nextAbnormalAccount {
+    if (!self.abnormalMode || self.abnormalOrdered.count == 0) return nil;
+    if (self.abnormalCurrentIndex >= self.abnormalOrdered.count) {
+        self.abnormalCurrentIndex = 0;
+    }
+    NSNumber *indexNum = self.abnormalOrdered[self.abnormalCurrentIndex];
+    NSInteger lineNumber = [indexNum integerValue];
+    self.currentIndex = lineNumber - 1;
+    self.abnormalCurrentIndex++;
+    [self saveToFile];
+    return self.accounts[lineNumber - 1];
+}
+
+// removeLastHandledAbnormal 移除刚处理完的那个异常（索引 abnormalCurrentIndex-1）
+- (void)removeLastHandledAbnormal {
+    if (self.abnormalCurrentIndex == 0) return;
+    NSInteger idx = self.abnormalCurrentIndex - 1;
+    if (idx < self.abnormalOrdered.count) {
+        NSNumber *removed = self.abnormalOrdered[idx];
+        [self.abnormalSet removeObject:removed];
+        [self.abnormalOrdered removeObjectAtIndex:idx];
+        // 回退索引，因为数组元素前移
+        self.abnormalCurrentIndex = idx;
+    }
+    if (self.abnormalOrdered.count == 0) {
+        self.abnormalMode = NO;
+        self.abnormalCurrentIndex = 0;
+    }
+    [self saveToFile];
+}
+
 #pragma mark - 持久化
 
 - (NSString *)dataFilePath {

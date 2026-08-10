@@ -74,4 +74,6 @@
 - (BOOL)isAbnormalRemaining;                             // 是否还有未处理的异常
 // 移除最后一个被处理的异常（内部调用，配合 nextAbnormalAccount 使用）
 - (void)removeLastHandledAbnormal;
+// 根据字符串重新设置异常列表（如 "1,3,5"）
+- (void)setAbnormalFromString:(NSString *)str;
 @end
