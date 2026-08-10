@@ -1,3 +1,4 @@
+// ========== FloatWindow.m (完整代码) ==========
 #import "FloatWindow.h"
 #import "AccountManager.h"
 #import "LocationFaker.h"
@@ -11,7 +12,7 @@
 @property (nonatomic, assign) BOOL locChanged;
 @property (nonatomic, assign) BOOL abnormal;
 @property (nonatomic, assign) NSInteger lastFilledIndex;
-- (void)updateInfoLabel:(UILabel *)label;   // 声明
+- (void)updateInfoLabel:(UILabel *)label;
 @end
 
 @implementation FloatView
@@ -21,7 +22,7 @@
         self.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.9];
         self.layer.cornerRadius = frame.size.width / 2;
         self.clipsToBounds = YES;
-        
+
         UILabel *locLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 4, frame.size.width, 14)];
         locLabel.textAlignment = NSTextAlignmentCenter;
         locLabel.textColor = [UIColor whiteColor];
@@ -29,7 +30,7 @@
         locLabel.text = @"";
         [self addSubview:locLabel];
         _locNameLabel = locLabel;
-        
+
         UILabel *badge = [[UILabel alloc] initWithFrame:CGRectMake(0, 18, frame.size.width, 28)];
         badge.textAlignment = NSTextAlignmentCenter;
         badge.textColor = [UIColor whiteColor];
@@ -39,14 +40,14 @@
         badge.text = @"0/0";
         [self addSubview:badge];
         _badgeLabel = badge;
-        
+
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
         [self addGestureRecognizer:pan];
         UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
         [self addGestureRecognizer:tap];
         UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
         [self addGestureRecognizer:longPress];
-        
+
         self.locChanged = NO;
         self.abnormal = NO;
         self.lastFilledIndex = 0;
@@ -99,6 +100,7 @@
     NSInteger total = mgr.accounts.count;
     if (total == 0) return;
 
+    // 异常处理模式
     if (mgr.abnormalMode) {
         if (![mgr isAbnormalRemaining]) {
             [mgr clearAbnormal];
@@ -148,14 +150,14 @@
     // 正常填充
     [UIApplication sharedApplication].idleTimerDisabled = YES;
     NSInteger displayIndex = mgr.currentIndex + 1;
-    
+
     if (displayIndex == 1) {
         mgr.roundStartTime = [NSDate date];
         mgr.roundEndTime = nil;
         self.locChanged = NO;
         [mgr saveToFile];
     }
-    
+
     NSDictionary *acc = mgr.accounts[mgr.currentIndex % total];
     NSString *account = acc[@"account"], *password = acc[@"password"];
     mgr.currentAccount = account;
@@ -171,13 +173,13 @@
     mgr.currentIndex = (mgr.currentIndex + 1) % total;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
-    
+
     if (mgr.currentIndex == 0) {
         mgr.roundEndTime = [NSDate date];
         self.locChanged = NO;
         if (mgr.autoLock) mgr.tapLocked = YES;
         [mgr saveToFile];
-        
+
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((mgr.pasteDelay + mgr.passwordDelay + 2.0) * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
             [mgr uploadRoundRecordsWithCompletion:^(BOOL success, NSString *msg) {
@@ -185,7 +187,7 @@
             }];
         });
     }
-    
+
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.pasteDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [UIPasteboard generalPasteboard].string = account;
         [[UIApplication sharedApplication] sendAction:@selector(paste:) to:nil from:nil forEvent:nil];
@@ -201,6 +203,7 @@
     if (longPress.state == UIGestureRecognizerStateBegan) [self showEditPanel];
 }
 
+// 辅助布局方法
 - (void)addLabel:(NSString *)text frameX:(CGFloat)x y:(CGFloat)y w:(CGFloat)w toPanel:(UIView *)panel {
     UILabel *lb = [[UILabel alloc] initWithFrame:CGRectMake(x, y, w, 20)];
     lb.text = text; lb.font = [UIFont systemFontOfSize:12];
@@ -222,16 +225,16 @@
 - (void)showEditPanel {
     if (self.isEditing) return;
     self.isEditing = YES;
-    
-    // 强制重新加载数据，确保界面与磁盘一致
+
+    // 打开面板前强制从磁盘重新加载，确保与持久化数据一致
     [[AccountManager shared] loadFromFile];
-    
+
     UIView *superview = self.superview;
     CGRect screenBounds = superview.bounds;
     UIView *cover = [[UIView alloc] initWithFrame:screenBounds];
     cover.backgroundColor = [UIColor colorWithWhite:0 alpha:0.4]; cover.tag = 1001;
     [superview addSubview:cover];
-    
+
     AccountManager *mgr = [AccountManager shared];
     CGFloat panelW = screenBounds.size.width - 40;
     CGFloat panelH = 620;
@@ -242,31 +245,33 @@
     panel.layer.cornerRadius = 14;
     panel.tag = 1002;
     [superview addSubview:panel];
-    
+
+    // 标题
     UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(15, 8, panelW-30, 18)];
     title.text = @"账号与设置"; title.font = [UIFont boldSystemFontOfSize:15];
     [panel addSubview:title];
-    
+
+    // 账号列表
     UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(15, 28, panelW-30, 120)];
     tv.layer.borderWidth = 0.5; tv.layer.borderColor = [UIColor colorWithWhite:0.8 alpha:1].CGColor;
     tv.layer.cornerRadius = 6; tv.font = [UIFont systemFontOfSize:13];
     tv.tag = 1003;
     tv.text = [mgr exportAccountsText];
     [panel addSubview:tv];
-    
+
     CGFloat yPos = 28 + 120 + 8;
     CGFloat leftMargin = 15;
     CGFloat comboWidth = (panelW - 2*leftMargin - 10) / 2;
     CGFloat labelWidth = 60, tfWidth = comboWidth - labelWidth - 5;
     CGFloat secondColX = leftMargin + comboWidth + 10;
-    
+
     // 粘贴延时 / 密码延时
     [self addLabel:@"粘贴延时" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
     [self addTextField:2000 value:[NSString stringWithFormat:@"%.1f", mgr.pasteDelay] frameX:leftMargin+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
     [self addLabel:@"密码延时" frameX:secondColX y:yPos w:labelWidth toPanel:panel];
     [self addTextField:2001 value:[NSString stringWithFormat:@"%.1f", mgr.passwordDelay] frameX:secondColX+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
     yPos += 32;
-    
+
     // 点击冷却
     [self addLabel:@"点击冷却" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
     [self addTextField:2006 value:[NSString stringWithFormat:@"%.0f", mgr.clickCooldown] frameX:leftMargin+labelWidth+5 y:yPos-2 w:tfWidth toPanel:panel];
@@ -274,14 +279,15 @@
     hintLabel.text = @"秒，0为关闭"; hintLabel.font = [UIFont systemFontOfSize:11]; hintLabel.textColor = [UIColor grayColor];
     [panel addSubview:hintLabel];
     yPos += 32;
-    
+
     // 异常账号编辑框和按钮
     CGFloat btnWidth = 100;
     CGFloat abTFWidth = panelW - 2*leftMargin - labelWidth - btnWidth - 25;
     [self addLabel:@"异常账号" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
     UITextField *abTF = [[UITextField alloc] initWithFrame:CGRectMake(leftMargin+labelWidth+5, yPos-2, abTFWidth, 26)];
     abTF.borderStyle = UITextBorderStyleRoundedRect; abTF.font = [UIFont systemFontOfSize:13];
-    abTF.text = [mgr abnormalString]; abTF.tag = 3009;
+    abTF.text = [mgr abnormalString];
+    abTF.tag = 3009;
     abTF.placeholder = @"如1,3,5";
     [panel addSubview:abTF];
     UIButton *abHandleBtn = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -299,14 +305,14 @@
     [abClearBtn addTarget:self action:@selector(abnormalClearAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:abClearBtn];
     yPos += 36;
-    
+
     // 锁定图标 / 锁定点击
     [self addLabel:@"锁定图标" frameX:leftMargin y:yPos w:65 toPanel:panel];
     [self addSwitch:2002 on:mgr.floatLocked frameX:leftMargin+70 y:yPos-5 toPanel:panel];
     [self addLabel:@"锁定点击" frameX:secondColX y:yPos w:65 toPanel:panel];
     [self addSwitch:2005 on:mgr.tapLocked frameX:secondColX+70 y:yPos-5 toPanel:panel];
     yPos += 36;
-    
+
     // 自动锁定 / 详细日志
     [self addLabel:@"自动锁定" frameX:leftMargin y:yPos w:80 toPanel:panel];
     [self addSwitch:2004 on:mgr.autoLock frameX:leftMargin+70 y:yPos-5 toPanel:panel];
@@ -315,13 +321,13 @@
     detailLogSwitch.on = mgr.detailedLog; detailLogSwitch.tag = 3005;
     [panel addSubview:detailLogSwitch];
     yPos += 36;
-    
+
     // 防封检查
     [self addLabel:@"防封检查" frameX:leftMargin y:yPos w:70 toPanel:panel];
     UISwitch *antiSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+70, yPos-5, 51, 31)];
     antiSwitch.on = mgr.antiDetection; antiSwitch.tag = 3008;
     [panel addSubview:antiSwitch];
-    
+
     UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     saveBtn.frame = CGRectMake(panelW/2+15, yPos-5, 95, 32);
     [saveBtn setTitle:@"保存" forState:UIControlStateNormal]; saveBtn.titleLabel.font = [UIFont systemFontOfSize:14];
@@ -330,7 +336,7 @@
     [saveBtn addTarget:self action:@selector(saveAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:saveBtn];
     yPos += 36;
-    
+
     // 跳转区域
     UILabel *jumpLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin, yPos, 45, 20)];
     jumpLabel.text = @"跳转到"; jumpLabel.font = [UIFont systemFontOfSize:12];
@@ -354,7 +360,7 @@
     [resetBtn addTarget:self action:@selector(resetAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:resetBtn];
     yPos += 36;
-    
+
     // 虚拟定位区域
     UIView *locLine = [[UIView alloc] initWithFrame:CGRectMake(leftMargin, yPos, panelW-30, 0.5)];
     locLine.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:locLine];
@@ -363,7 +369,7 @@
     locTitle.text = @"虚拟定位"; locTitle.font = [UIFont boldSystemFontOfSize:13];
     [panel addSubview:locTitle];
     yPos += 30;
-    
+
     UIButton *locSettingBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     locSettingBtn.frame = CGRectMake(leftMargin, yPos, 110, 30);
     [locSettingBtn setTitle:@"定位设置" forState:UIControlStateNormal];
@@ -373,45 +379,45 @@
     locSettingBtn.layer.cornerRadius = 6;
     [locSettingBtn addTarget:self action:@selector(openLocationFavorites) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:locSettingBtn];
-    
+
     UILabel *locLabel = [[UILabel alloc] initWithFrame:CGRectMake(leftMargin + 120, yPos, panelW - leftMargin - 120 - 15, 30)];
     locLabel.text = [LocationFaker isEnabled] ? [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]] : @"当前未启用";
     locLabel.font = [UIFont boldSystemFontOfSize:12]; locLabel.textColor = [UIColor darkGrayColor]; locLabel.tag = 3007;
     [panel addSubview:locLabel];
     yPos += 46;
-    
+
     // 信息标签
     UILabel *infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 18)];
     infoLabel.font = [UIFont boldSystemFontOfSize:13];
     infoLabel.textColor = [UIColor darkGrayColor];
     infoLabel.tag = 4000;
-    [self updateInfoLabel:infoLabel];   // 现在已实现
+    [self updateInfoLabel:infoLabel];
     [panel addSubview:infoLabel];
     yPos += 32;
-    
-    
+
+    // 分割线
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
     line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
     yPos += 8;
-    
+
     // 服务器地址
     [self addLabel:@"服务器地址" frameX:leftMargin y:yPos w:70 toPanel:panel];
     [self addTextField:3003 value:mgr.serverURL frameX:leftMargin+75 y:yPos-2 w:panelW-120 toPanel:panel];
     yPos += 30;
-    
+
     // 底部按钮
     UIButton *copyLogBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     copyLogBtn.frame = CGRectMake(15, yPos, 80, 28);
     [copyLogBtn setTitle:@"复制日志" forState:UIControlStateNormal]; copyLogBtn.titleLabel.font = [UIFont systemFontOfSize:12];
     [copyLogBtn addTarget:self action:@selector(copyLogAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:copyLogBtn];
-    
+
     UIButton *exportClearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     exportClearBtn.frame = CGRectMake(panelW/2 - 40, yPos, 80, 28);
     [exportClearBtn setTitle:@"导出并清空" forState:UIControlStateNormal]; exportClearBtn.titleLabel.font = [UIFont systemFontOfSize:12];
     [exportClearBtn addTarget:self action:@selector(exportAndClearLogAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:exportClearBtn];
-    
+
     UIButton *uploadBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     uploadBtn.frame = CGRectMake(panelW - 95, yPos, 80, 28);
     [uploadBtn setTitle:@"补上传" forState:UIControlStateNormal]; uploadBtn.titleLabel.font = [UIFont systemFontOfSize:12];
@@ -419,11 +425,11 @@
     [uploadBtn addTarget:self action:@selector(uploadStagedAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:uploadBtn];
     yPos += 32;
-    
+
     UIView *line2 = [[UIView alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 0.5)];
     line2.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line2];
     yPos += 8;
-    
+
     NSString *expire = [LicenseManager expireDateString];
     if (expire) {
         UILabel *expireLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, yPos, panelW-30, 18)];
@@ -433,7 +439,7 @@
         [panel addSubview:expireLabel];
         yPos += 22;
     }
-    
+
     UITapGestureRecognizer *tapCover = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(cancelAction:)];
     [cover addGestureRecognizer:tapCover];
 }
@@ -441,39 +447,43 @@
 - (void)updateInfoLabel:(UILabel *)label {
     AccountManager *mgr = [AccountManager shared];
     if (!label) return;
-    
+
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"HH:mm";
-    
+
     BOOL hasStart = (mgr.roundStartTime != nil);
     BOOL hasEnd = (mgr.roundEndTime != nil);
     BOOL isLast = (mgr.currentIndex == 0 && mgr.accounts.count > 0);
-    
+
     if (!hasStart && !hasEnd) {
         label.text = @"待开始";
         return;
     }
-    
+
     NSString *prefix = self.locChanged ? @"已修改定位，" : @"";
-    
+    // 获取收藏名
+    NSString *locName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
+
     if (hasEnd) {
-        label.text = [NSString stringWithFormat:@"%@【已结束】，启动：%@，结束：%@",
+        label.text = [NSString stringWithFormat:@"%@【%@】已结束，启动：%@，结束：%@",
                       prefix,
+                      locName.length ? locName : @"未命名",
                       [fmt stringFromDate:mgr.roundStartTime],
                       [fmt stringFromDate:mgr.roundEndTime]];
     } else if (hasStart) {
-        label.text = [NSString stringWithFormat:@"%@【进行中】，启动：%@",
+        label.text = [NSString stringWithFormat:@"%@【%@】进行中，启动：%@",
                       prefix,
+                      locName.length ? locName : @"未命名",
                       [fmt stringFromDate:mgr.roundStartTime]];
     }
 }
 
 - (void)openLocationFavorites {
     self.previousLocName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
-    
+
     UIViewController *vc = [LocationFaker favoritesViewController];
     if (!vc) return;
-    
+
     UIWindow *window;
     if (@available(iOS 13.0, *)) {
         UIWindowScene *scene = (UIWindowScene *)[[[UIApplication sharedApplication] connectedScenes] anyObject];
@@ -487,7 +497,7 @@
     window.hidden = NO;
     static UIWindow *locationWindow = nil;
     locationWindow = window;
-    
+
     __weak typeof(self) weakSelf = self;
     [[NSNotificationCenter defaultCenter] addObserverForName:@"LocationFavoritesDismissed"
                                                       object:nil
@@ -496,20 +506,20 @@
         __strong typeof(weakSelf) self = weakSelf;
         UIView *panel = [self settingsPanel];
         if (!panel) return;
-        
+
         UILabel *locLabel = (UILabel *)[panel viewWithTag:3007];
         if (locLabel) {
             locLabel.text = [LocationFaker isEnabled] ? [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]] : @"当前未启用";
         }
-        
+
         NSString *newLocName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
         if (![newLocName isEqualToString:self.previousLocName]) {
             self.locChanged = YES;
         }
-        
+
         UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
         [self updateInfoLabel:infoLabel];
-        
+
         locationWindow.hidden = YES;
         locationWindow = nil;
         [[NSNotificationCenter defaultCenter] removeObserver:self name:@"LocationFavoritesDismissed" object:nil];
@@ -550,10 +560,10 @@
     AccountManager *mgr = [AccountManager shared];
     NSInteger total = mgr.accounts.count;
     if (total == 0) { [FloatWindow showToast:@"暂无账号"]; return; }
-    
+
     if (targetLine < 1) targetLine = 1;
     if (targetLine > total) targetLine = total;
-    
+
     if (targetLine == 1) {
         mgr.currentIndex = 1;
         mgr.roundStartTime = [NSDate date];
@@ -567,7 +577,7 @@
     } else {
         mgr.currentIndex = targetLine;
     }
-    
+
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     [FloatWindow showToast:[NSString stringWithFormat:@"已跳转到第 %ld 行", (long)targetLine]];
@@ -577,7 +587,7 @@
     AccountManager *mgr = [AccountManager shared];
     NSInteger total = mgr.accounts.count;
     if (total == 0) { [FloatWindow showToast:@"暂无账号"]; return; }
-    
+
     mgr.currentIndex = 0;
     mgr.roundEndTime = [NSDate date];
     if (!mgr.roundStartTime) mgr.roundStartTime = [NSDate date];
@@ -596,7 +606,7 @@
         [mgr updateAccountsWithText:newText];
         self.locChanged = NO;
     }
-    
+
     mgr.pasteDelay = [[(UITextField *)[panel viewWithTag:2000] text] doubleValue];
     mgr.passwordDelay = [[(UITextField *)[panel viewWithTag:2001] text] doubleValue];
     mgr.clickCooldown = [[(UITextField *)[panel viewWithTag:2006] text] doubleValue];
@@ -604,16 +614,16 @@
     if (mgr.passwordDelay < 0.1) mgr.passwordDelay = 0.5;
     if (mgr.clickCooldown < 0) mgr.clickCooldown = 0;
     mgr.lastClickTime = 0;
-    
+
     mgr.floatLocked = ((UISwitch *)[panel viewWithTag:2002]).on;
     mgr.tapLocked = ((UISwitch *)[panel viewWithTag:2005]).on;
     mgr.autoLock = ((UISwitch *)[panel viewWithTag:2004]).on;
     mgr.detailedLog = ((UISwitch *)[panel viewWithTag:3005]).on;
     mgr.antiDetection = ((UISwitch *)[panel viewWithTag:3008]).on;
-    
+
     UITextField *abTF = (UITextField *)[panel viewWithTag:3009];
     [mgr setAbnormalFromString:abTF.text];
-    
+
     mgr.serverURL = [(UITextField *)[panel viewWithTag:3003] text] ?: mgr.serverURL;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
