@@ -1,4 +1,3 @@
-// ========== FloatWindow.m (完整代码) ==========
 #import "FloatWindow.h"
 #import "AccountManager.h"
 #import "LocationFaker.h"
@@ -226,9 +225,6 @@
     if (self.isEditing) return;
     self.isEditing = YES;
 
-    // 打开面板前强制从磁盘重新加载，确保与持久化数据一致
-    [[AccountManager shared] loadFromFile];
-
     UIView *superview = self.superview;
     CGRect screenBounds = superview.bounds;
     UIView *cover = [[UIView alloc] initWithFrame:screenBounds];
@@ -256,7 +252,7 @@
     tv.layer.borderWidth = 0.5; tv.layer.borderColor = [UIColor colorWithWhite:0.8 alpha:1].CGColor;
     tv.layer.cornerRadius = 6; tv.font = [UIFont systemFontOfSize:13];
     tv.tag = 1003;
-    tv.text = [mgr exportAccountsText];
+    tv.text = [mgr exportAccountsText];    // 直接使用内存中的账号数据
     [panel addSubview:tv];
 
     CGFloat yPos = 28 + 120 + 8;
@@ -286,7 +282,7 @@
     [self addLabel:@"异常账号" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
     UITextField *abTF = [[UITextField alloc] initWithFrame:CGRectMake(leftMargin+labelWidth+5, yPos-2, abTFWidth, 26)];
     abTF.borderStyle = UITextBorderStyleRoundedRect; abTF.font = [UIFont systemFontOfSize:13];
-    abTF.text = [mgr abnormalString];
+    abTF.text = [mgr abnormalString];    // 直接使用内存中的异常数据
     abTF.tag = 3009;
     abTF.placeholder = @"如1,3,5";
     [panel addSubview:abTF];
@@ -461,7 +457,6 @@
     }
 
     NSString *prefix = self.locChanged ? @"已修改定位，" : @"";
-    // 获取收藏名
     NSString *locName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
 
     if (hasEnd) {
