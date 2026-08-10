@@ -27,7 +27,7 @@
 @property (nonatomic, assign) BOOL detailedLog;
 @property (nonatomic, assign) BOOL antiDetection;
 @property (nonatomic, assign) BOOL locationLoggedThisCycle;
-
+@property (nonatomic, copy) NSString *roundEndLocName;   // 一轮结束时的定位收藏名称
 // 异常账号
 @property (nonatomic, strong) NSMutableSet<NSNumber *> *abnormalSet;
 @property (nonatomic, strong) NSMutableArray<NSNumber *> *abnormalOrdered;

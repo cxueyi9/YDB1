@@ -42,6 +42,7 @@
         self.abnormalOrdered = [NSMutableArray array];
         self.abnormalCurrentIndex = 0;
         self.abnormalMode = NO;
+        self.roundEndLocName = @"";
     }
     return self;
 }
@@ -101,6 +102,7 @@
     self.roundEndTime = nil;
     self.tapLocked = NO;
     self.currentAccount = @"";
+    self.roundEndLocName = @"";
     [self saveToFile];
 }
 
@@ -444,6 +446,7 @@
     [ud setBool:self.antiDetection forKey:@"antiDetection"];
     [ud setObject:self.serverURL ?: @"" forKey:@"serverURL"];
     [ud setObject:self.currentAccount ?: @"" forKey:@"currentAccount"];
+    [ud setObject:self.roundEndLocName ?: @"" forKey:@"roundEndLocName"];
     if (self.roundStartTime) [ud setObject:self.roundStartTime forKey:@"roundStartTime"];
     else [ud removeObjectForKey:@"roundStartTime"];
     if (self.roundEndTime) [ud setObject:self.roundEndTime forKey:@"roundEndTime"];
@@ -501,6 +504,7 @@
     self.antiDetection = [ud boolForKey:@"antiDetection"];
     self.serverURL = [ud stringForKey:@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
     self.currentAccount = [ud stringForKey:@"currentAccount"] ?: @"";
+    self.roundEndLocName = [ud stringForKey:@"roundEndLocName"] ?: @"";
     if ([ud objectForKey:@"roundStartTime"]) self.roundStartTime = [ud objectForKey:@"roundStartTime"];
     if ([ud objectForKey:@"roundEndTime"]) self.roundEndTime = [ud objectForKey:@"roundEndTime"];
     NSString *fpStr = [ud stringForKey:@"floatWindowPoint"];

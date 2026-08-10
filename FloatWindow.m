@@ -21,7 +21,7 @@
         self.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.9];
         self.layer.cornerRadius = frame.size.width / 2;
         self.clipsToBounds = YES;
-
+        
         UILabel *locLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 4, frame.size.width, 14)];
         locLabel.textAlignment = NSTextAlignmentCenter;
         locLabel.textColor = [UIColor whiteColor];
@@ -29,7 +29,7 @@
         locLabel.text = @"";
         [self addSubview:locLabel];
         _locNameLabel = locLabel;
-
+        
         UILabel *badge = [[UILabel alloc] initWithFrame:CGRectMake(0, 18, frame.size.width, 28)];
         badge.textAlignment = NSTextAlignmentCenter;
         badge.textColor = [UIColor whiteColor];
@@ -39,14 +39,14 @@
         badge.text = @"0/0";
         [self addSubview:badge];
         _badgeLabel = badge;
-
+        
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
         [self addGestureRecognizer:pan];
         UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
         [self addGestureRecognizer:tap];
         UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
         [self addGestureRecognizer:longPress];
-
+        
         self.locChanged = NO;
         self.abnormal = NO;
         self.lastFilledIndex = 0;
@@ -89,7 +89,7 @@
         [FloatWindow showToast:[NSString stringWithFormat:@"请 %.0f 秒后再点", remaining]];
         [mgr recordAbnormalWithIndex:self.lastFilledIndex];
         if (!mgr.abnormalMode) {
-            self.abnormal = YES;
+            self.abnormal = YES;   // 标记异常，背景变红
         }
         return;
     }
@@ -153,6 +153,7 @@
     if (displayIndex == 1) {
         mgr.roundStartTime = [NSDate date];
         mgr.roundEndTime = nil;
+        mgr.roundEndLocName = @"";
         self.locChanged = NO;
         [mgr saveToFile];
     }
@@ -175,6 +176,8 @@
 
     if (mgr.currentIndex == 0) {
         mgr.roundEndTime = [NSDate date];
+        // 记录结束时的定位名称
+        mgr.roundEndLocName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
         self.locChanged = NO;
         if (mgr.autoLock) mgr.tapLocked = YES;
         [mgr saveToFile];
@@ -247,12 +250,11 @@
     title.text = @"账号与设置"; title.font = [UIFont boldSystemFontOfSize:15];
     [panel addSubview:title];
 
-    // 账号列表
     UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(15, 28, panelW-30, 120)];
     tv.layer.borderWidth = 0.5; tv.layer.borderColor = [UIColor colorWithWhite:0.8 alpha:1].CGColor;
     tv.layer.cornerRadius = 6; tv.font = [UIFont systemFontOfSize:13];
     tv.tag = 1003;
-    tv.text = [mgr exportAccountsText];    // 直接使用内存中的账号数据
+    tv.text = [mgr exportAccountsText];
     [panel addSubview:tv];
 
     CGFloat yPos = 28 + 120 + 8;
@@ -282,8 +284,7 @@
     [self addLabel:@"异常账号" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
     UITextField *abTF = [[UITextField alloc] initWithFrame:CGRectMake(leftMargin+labelWidth+5, yPos-2, abTFWidth, 26)];
     abTF.borderStyle = UITextBorderStyleRoundedRect; abTF.font = [UIFont systemFontOfSize:13];
-    abTF.text = [mgr abnormalString];    // 直接使用内存中的异常数据
-    abTF.tag = 3009;
+    abTF.text = [mgr abnormalString]; abTF.tag = 3009;
     abTF.placeholder = @"如1,3,5";
     [panel addSubview:abTF];
     UIButton *abHandleBtn = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -443,13 +444,11 @@
 - (void)updateInfoLabel:(UILabel *)label {
     AccountManager *mgr = [AccountManager shared];
     if (!label) return;
-
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"HH:mm";
 
     BOOL hasStart = (mgr.roundStartTime != nil);
     BOOL hasEnd = (mgr.roundEndTime != nil);
-    BOOL isLast = (mgr.currentIndex == 0 && mgr.accounts.count > 0);
 
     if (!hasStart && !hasEnd) {
         label.text = @"待开始";
@@ -457,18 +456,23 @@
     }
 
     NSString *prefix = self.locChanged ? @"已修改定位，" : @"";
-    NSString *locName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
-
+    NSString *locName = @"";
     if (hasEnd) {
+        // 已结束：使用结束时保存的定位名，即使重启也能恢复
+        locName = mgr.roundEndLocName.length > 0 ? mgr.roundEndLocName : (mgr.roundEndLocName ?: @"");
         label.text = [NSString stringWithFormat:@"%@【%@】已结束，启动：%@，结束：%@",
                       prefix,
                       locName.length ? locName : @"未命名",
                       [fmt stringFromDate:mgr.roundStartTime],
                       [fmt stringFromDate:mgr.roundEndTime]];
     } else if (hasStart) {
+        // 进行中：使用当前定位名（如果启用），否则空
+        if ([LocationFaker isEnabled]) {
+            locName = [LocationFaker currentName];
+        }
         label.text = [NSString stringWithFormat:@"%@【%@】进行中，启动：%@",
                       prefix,
-                      locName.length ? locName : @"未命名",
+                      locName.length ? locName : @"",
                       [fmt stringFromDate:mgr.roundStartTime]];
     }
 }
