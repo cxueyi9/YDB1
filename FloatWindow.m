@@ -10,7 +10,7 @@
 @property (nonatomic, copy) NSString *previousLocName;
 @property (nonatomic, assign) BOOL locChanged;
 @property (nonatomic, assign) BOOL abnormal;
-@property (nonatomic, assign) NSInteger lastFilledIndex;   // 记录上一次正常填充的账号索引(1‑based)
+@property (nonatomic, assign) NSInteger lastFilledIndex;   // 记录上次正常填充的账号索引(1‑based)
 @end
 
 @implementation FloatView
@@ -62,7 +62,20 @@
     }
 }
 
-- (void)handlePan:(UIPanGestureRecognizer *)pan { /* 保持不变 */ }
+- (void)handlePan:(UIPanGestureRecognizer *)pan {
+    if (self.isEditing || [AccountManager shared].floatLocked) return;
+    CGPoint translation = [pan translationInView:self.superview];
+    CGPoint newCenter = CGPointMake(self.center.x + translation.x, self.center.y + translation.y);
+    CGFloat half = self.bounds.size.width / 2, margin = 10;
+    newCenter.x = MAX(half + margin, MIN(newCenter.x, self.superview.bounds.size.width - half - margin));
+    newCenter.y = MAX(half + margin + 20, MIN(newCenter.y, self.superview.bounds.size.height - half - margin - 20));
+    self.center = newCenter;
+    [pan setTranslation:CGPointZero inView:self.superview];
+    if (pan.state == UIGestureRecognizerStateEnded) {
+        [AccountManager shared].floatWindowPoint = self.frame.origin;
+        [[AccountManager shared] saveToFile];
+    }
+}
 
 - (void)handleTap:(UITapGestureRecognizer *)tap {
     if (self.isEditing) return;
@@ -73,7 +86,7 @@
     if (mgr.clickCooldown > 0 && (now - mgr.lastClickTime) < mgr.clickCooldown) {
         NSTimeInterval remaining = mgr.clickCooldown - (now - mgr.lastClickTime);
         [FloatWindow showToast:[NSString stringWithFormat:@"请 %.0f 秒后再点", remaining]];
-        // 异常记录使用上一次实际填充的账号索引
+        // 记录异常：使用上一次实际填充的账号索引
         [mgr recordAbnormalWithIndex:self.lastFilledIndex];
         if (!mgr.abnormalMode) {
             self.abnormal = YES;
@@ -100,6 +113,7 @@
             [FloatWindow showToast:@"异常已全部处理"];
             return;
         }
+
         NSDictionary *acc = [mgr nextAbnormalAccount];
         if (!acc) return;
         NSString *account = acc[@"account"], *password = acc[@"password"];
@@ -108,11 +122,12 @@
         NSString *fakeID = [mgr currentFakedID];
         [mgr appendLog:[NSString stringWithFormat:@"【异常处理】账号：%@，伪装标识：%@", account, fakeID]];
 
-        NSInteger handled = mgr.abnormalCurrentIndex;
+        NSInteger handled = mgr.abnormalCurrentIndex; // 已处理数量
         NSInteger totalAb = mgr.abnormalOrdered.count;
         [FloatWindow showToast:[NSString stringWithFormat:@"异常 %ld/%ld，账号 %@",
                                 (long)handled, (long)totalAb, account]];
 
+        // 执行填充
         [UIApplication sharedApplication].idleTimerDisabled = YES;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.pasteDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [UIPasteboard generalPasteboard].string = account;
@@ -124,8 +139,10 @@
             });
         });
 
+        // 移除已处理的异常
         [mgr removeLastHandledAbnormal];
         [[FloatWindow shared] updateBadge];
+
         if (![mgr isAbnormalRemaining]) {
             [mgr clearAbnormal];
             self.abnormal = NO;
@@ -161,7 +178,9 @@
     [mgr addRoundRecordWithIndex:displayIndex total:total account:account];
     [FloatWindow showToast:[NSString stringWithFormat:@"%ld/%ld，账号 %@", (long)displayIndex, (long)total, account]];
 
+    // 记录本次填充的账号索引
     self.lastFilledIndex = displayIndex;
+    
     mgr.currentIndex = (mgr.currentIndex + 1) % total;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
@@ -171,7 +190,9 @@
         self.locChanged = NO;
         if (mgr.autoLock) mgr.tapLocked = YES;
         [mgr saveToFile];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((mgr.pasteDelay + mgr.passwordDelay + 2.0) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((mgr.pasteDelay + mgr.passwordDelay + 2.0) * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
             [mgr uploadRoundRecordsWithCompletion:^(BOOL success, NSString *msg) {
                 [FloatWindow showToast: success ? @"本轮记录已上传" : [NSString stringWithFormat:@"上传失败: %@", msg]];
             }];
@@ -192,7 +213,6 @@
 - (void)handleLongPress:(UILongPressGestureRecognizer *)longPress {
     if (longPress.state == UIGestureRecognizerStateBegan) [self showEditPanel];
 }
-
 
 // 辅助布局方法
 - (void)addLabel:(NSString *)text frameX:(CGFloat)x y:(CGFloat)y w:(CGFloat)w toPanel:(UIView *)panel {
@@ -344,7 +364,7 @@
     [resetBtn addTarget:self action:@selector(resetAction:) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:resetBtn];
     yPos += 36;
-      
+    
     // 虚拟定位区域
     UIView *locLine = [[UIView alloc] initWithFrame:CGRectMake(leftMargin, yPos, panelW-30, 0.5)];
     locLine.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:locLine];
@@ -383,6 +403,7 @@
     line.backgroundColor = [UIColor colorWithWhite:0.85 alpha:1]; [panel addSubview:line];
     yPos += 8;
     
+    // 服务器地址
     [self addLabel:@"服务器地址" frameX:leftMargin y:yPos w:70 toPanel:panel];
     [self addTextField:3003 value:mgr.serverURL frameX:leftMargin+75 y:yPos-2 w:panelW-120 toPanel:panel];
     yPos += 30;
@@ -435,6 +456,7 @@
     
     BOOL hasStart = (mgr.roundStartTime != nil);
     BOOL hasEnd = (mgr.roundEndTime != nil);
+    BOOL isLast = (mgr.currentIndex == 0 && mgr.accounts.count > 0);
     
     if (!hasStart && !hasEnd) {
         label.text = @"待开始";
@@ -597,6 +619,11 @@
     mgr.autoLock = ((UISwitch *)[panel viewWithTag:2004]).on;
     mgr.detailedLog = ((UISwitch *)[panel viewWithTag:3005]).on;
     mgr.antiDetection = ((UISwitch *)[panel viewWithTag:3008]).on;
+    
+    // 保存异常编辑框内容
+    UITextField *abTF = (UITextField *)[panel viewWithTag:3009];
+    [mgr setAbnormalFromString:abTF.text];
+    
     mgr.serverURL = [(UITextField *)[panel viewWithTag:3003] text] ?: mgr.serverURL;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
@@ -694,24 +721,28 @@
     AccountManager *mgr = [AccountManager shared];
     NSInteger total = mgr.accounts.count;
     if (mgr.abnormalMode && mgr.abnormalOrdered.count > 0) {
+        // 异常模式：显示当前异常进度/总数
         _floatView.badgeLabel.text = [NSString stringWithFormat:@"%ld/%ld", (long)mgr.abnormalCurrentIndex, (long)mgr.abnormalOrdered.count];
-        _floatView.abnormal = YES;   // 确保背景红色
+        _floatView.abnormal = YES;
     } else if (total > 0) {
         _floatView.abnormal = NO;
-        // 正常进度显示
-        _floatView.badgeLabel.text = ...;
+        NSString *progressText;
+        if (mgr.currentIndex == 0 && total > 0) {
+            progressText = [NSString stringWithFormat:@"%ld/%ld", (long)total, (long)total];
+        } else {
+            progressText = [NSString stringWithFormat:@"%ld/%ld", (long)mgr.currentIndex, (long)total];
+        }
+        _floatView.badgeLabel.text = progressText;
     } else {
         _floatView.badgeLabel.text = @"0/0";
     }
     _floatView.locNameLabel.text = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
 }
 
-// 普通 Toast（稍上移）
 + (void)showToast:(NSString *)message {
     [self showToastMessage:message atY:60];
 }
 
-// 虚拟定位专用 Toast（稍下移）
 + (void)showLocationToast:(NSString *)message {
     [self showToastMessage:message atY:90];
 }
