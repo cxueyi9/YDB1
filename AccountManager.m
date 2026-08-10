@@ -1,7 +1,7 @@
 #import "AccountManager.h"
 #import <UIKit/UIKit.h>
 #import <CommonCrypto/CommonDigest.h>
-#import <Security/Security.h>   // 用于 Keychain 操作
+#import <Security/Security.h>
 
 @interface AccountManager ()
 @property (nonatomic, strong) NSMutableArray<NSDictionary *> *currentRoundRecords;
@@ -23,10 +23,6 @@
 
 - (instancetype)init {
     if (self = [super init]) {
-        _abnormalSet = [NSMutableSet set];
-        _abnormalOrdered = [NSMutableArray array];
-        _abnormalCurrentIndex = 0;
-        _abnormalMode = NO;
         _accounts = [NSMutableArray array];
         self.floatWindowPoint = CGPointMake(20, 100);
         self.pasteDelay = 1.0;
@@ -37,13 +33,15 @@
         self.clickCooldown = 30.0;
         self.lastClickTime = 0;
         self.detailedLog = NO;
+        self.antiDetection = NO;
+        self.locationLoggedThisCycle = NO;
         self.serverURL = @"http://你的服务器地址:5000/upload";
         self.currentRoundRecords = [NSMutableArray array];
         self.currentAccount = @"";
-        self.roundStartTime = nil;
-        self.roundEndTime = nil;
-        self.antiDetection = NO;
-        self.locationLoggedThisCycle = NO;
+        self.abnormalSet = [NSMutableSet set];
+        self.abnormalOrdered = [NSMutableArray array];
+        self.abnormalCurrentIndex = 0;
+        self.abnormalMode = NO;
     }
     return self;
 }
@@ -56,56 +54,6 @@
     self.currentIndex = (self.currentIndex + 1) % _accounts.count;
     [self saveToFile];
     return acc;
-}
-
-- (void)removeLastHandledAbnormal {
-    if (self.abnormalCurrentIndex == 0) return; // 未处理过
-    NSInteger lastIndex = self.abnormalCurrentIndex - 1;
-    if (lastIndex < self.abnormalOrdered.count) {
-        NSNumber *removed = self.abnormalOrdered[lastIndex];
-        [self.abnormalSet removeObject:removed];
-        [self.abnormalOrdered removeObjectAtIndex:lastIndex];
-        // 回退索引，因为移除后后续元素前移
-        self.abnormalCurrentIndex = lastIndex;
-        [self saveToFile];
-    }
-}
-- (void)clearDeviceIdentifierCache {
-    // 1. 清除 NSUserDefaults 中与标识可能相关的键
-    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    NSArray *possibleKeys = @[@"deviceId", @"IDFV", @"IDFA", @"deviceIdentifier",
-                              @"com.apple.deviceid", @"com.apple.identifier",
-                              @"com.yourapp.deviceid", @"udid", @"uuid"];
-    for (NSString *key in possibleKeys) {
-        [ud removeObjectForKey:key];
-    }
-    [ud synchronize];
-
-    // 2. 清除 Keychain 中可能存储的设备标识
-    // 一般 APP 可能用 BundleID 作为 service，我们尝试常见组合
-    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown";
-    NSArray *services = @[bundleID,
-                          [bundleID stringByAppendingString:@".deviceid"],
-                          [bundleID stringByAppendingString:@".identifier"],
-                          @"com.apple.deviceid",
-                          @"com.apple.identifier"];
-    for (NSString *service in services) {
-        [self deleteKeychainItemForService:service];
-    }
-}
-
-// 删除 Keychain 中指定 service 的条目
-- (void)deleteKeychainItemForService:(NSString *)service {
-    NSDictionary *query = @{
-        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
-        (__bridge id)kSecAttrService: service,
-        (__bridge id)kSecReturnAttributes: @NO,
-        (__bridge id)kSecReturnData: @NO
-    };
-    OSStatus status = SecItemDelete((__bridge CFDictionaryRef)query);
-    if (status != errSecSuccess && status != errSecItemNotFound) {
-        NSLog(@"[clearCache] Keychain delete failed for %@, status: %d", service, (int)status);
-    }
 }
 
 - (void)updateAccountsWithText:(NSString *)text {
@@ -148,10 +96,10 @@
         }
     }
     self.currentIndex = 0;
-    self.tapLocked = NO;
-    self.currentAccount = @"";
     self.roundStartTime = nil;
     self.roundEndTime = nil;
+    self.tapLocked = NO;
+    self.currentAccount = @"";
     [self saveToFile];
 }
 
@@ -167,13 +115,14 @@
 
 - (void)resetProgress {
     self.currentIndex = 0;
+    self.roundStartTime = nil;
+    self.roundEndTime = nil;
     self.tapLocked = NO;
     self.currentAccount = @"";
     [self saveToFile];
-    self.roundStartTime = nil;
-    self.roundEndTime = nil;
 }
 
+#pragma mark - 伪装标识
 
 - (NSString *)generateFakedIDForAccount:(NSString *)account {
     if (!account || account.length == 0) return @"00000000-0000-0000-0000-000000000000";
@@ -330,11 +279,74 @@
     [task resume];
 }
 
-//异常的处理
+#pragma mark - 暂存记录
+
+- (NSString *)stagedFilePath {
+    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    return [paths.firstObject stringByAppendingPathComponent:@"staged_records.plist"];
+}
+- (NSArray<NSDictionary *> *)loadStagedRecords {
+    return [NSArray arrayWithContentsOfFile:[self stagedFilePath]] ?: @[];
+}
+- (void)saveStagedRecords:(NSArray<NSDictionary *> *)records {
+    [records writeToFile:[self stagedFilePath] atomically:YES];
+}
+- (void)clearStagedRecords {
+    [[NSFileManager defaultManager] removeItemAtPath:[self stagedFilePath] error:nil];
+}
+
+- (NSString *)deviceIdentifier {
+    static NSString *identifier = nil;
+    if (identifier) return identifier;
+    NSString *key = @"com.youdaibao.deviceid";
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    identifier = [ud stringForKey:key];
+    if (!identifier) {
+        identifier = [[NSUUID UUID] UUIDString];
+        [ud setObject:identifier forKey:key];
+    }
+    return identifier;
+}
+
+#pragma mark - 清除设备标识缓存（可选）
+
+- (void)clearDeviceIdentifierCache {
+    // 清除 UserDefaults 可疑键
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    NSArray *possibleKeys = @[@"deviceId", @"IDFV", @"IDFA", @"deviceIdentifier",
+                              @"com.apple.deviceid", @"com.apple.identifier",
+                              @"com.yourapp.deviceid", @"udid", @"uuid"];
+    for (NSString *key in possibleKeys) {
+        [ud removeObjectForKey:key];
+    }
+    [ud synchronize];
+
+    // 清除 Keychain 可能存储的设备标识
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown";
+    NSArray *services = @[bundleID,
+                          [bundleID stringByAppendingString:@".deviceid"],
+                          [bundleID stringByAppendingString:@".identifier"],
+                          @"com.apple.deviceid",
+                          @"com.apple.identifier"];
+    for (NSString *service in services) {
+        [self deleteKeychainItemForService:service];
+    }
+}
+
+- (void)deleteKeychainItemForService:(NSString *)service {
+    NSDictionary *query = @{
+        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrService: service,
+    };
+    SecItemDelete((__bridge CFDictionaryRef)query);
+}
+
+#pragma mark - 异常处理
+
 - (void)recordAbnormalWithIndex:(NSInteger)index {
+    if (index < 1 || index > self.accounts.count) return;
     NSNumber *idx = @(index);
     [self.abnormalSet addObject:idx];
-    // 保持有序（按首次出现顺序）
     if (![self.abnormalOrdered containsObject:idx]) {
         [self.abnormalOrdered addObject:idx];
     }
@@ -352,68 +364,6 @@
 - (NSString *)abnormalString {
     if (self.abnormalOrdered.count == 0) return @"";
     return [self.abnormalOrdered componentsJoinedByString:@","];
-}
-
-- (void)enterAbnormalMode {
-    if (self.abnormalOrdered.count == 0) return;
-    self.abnormalMode = YES;
-    self.abnormalCurrentIndex = 0;
-    [self saveToFile];
-}
-
-- (NSDictionary *)nextAbnormalAccount {
-    if (!self.abnormalMode || self.abnormalOrdered.count == 0) return nil;
-    if (self.abnormalCurrentIndex >= self.abnormalOrdered.count) {
-        self.abnormalCurrentIndex = 0;
-    }
-    NSInteger lineNumber = [self.abnormalOrdered[self.abnormalCurrentIndex] integerValue];
-    // 先记录当前索引，准备下次移除时使用
-    // currentIndex 先移动到下一位
-    self.currentIndex = lineNumber - 1;
-    self.abnormalCurrentIndex++;
-    [self saveToFile];
-    return self.accounts[lineNumber - 1];
-}
-
-- (void)removeAbnormalAtIndex:(NSInteger)index {
-    NSNumber *idx = @(index);
-    [self.abnormalSet removeObject:idx];
-    [self.abnormalOrdered removeObject:idx];
-    // 调整 currentIndex 避免越界
-    if (self.abnormalCurrentIndex > self.abnormalOrdered.count) {
-        self.abnormalCurrentIndex = 0;
-    }
-    if (self.abnormalOrdered.count == 0) {
-        [self clearAbnormal];
-    }
-    [self saveToFile];
-}
-
-- (BOOL)isAbnormalRemaining {
-    return self.abnormalOrdered.count > 0;
-}
-
-#pragma mark - 暂存记录
-
-- (NSString *)stagedFilePath {
-    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-    return [paths.firstObject stringByAppendingPathComponent:@"staged_records.plist"];
-}
-- (NSArray<NSDictionary *> *)loadStagedRecords { return [NSArray arrayWithContentsOfFile:[self stagedFilePath]] ?: @[]; }
-- (void)saveStagedRecords:(NSArray<NSDictionary *> *)records { [records writeToFile:[self stagedFilePath] atomically:YES]; }
-- (void)clearStagedRecords { [[NSFileManager defaultManager] removeItemAtPath:[self stagedFilePath] error:nil]; }
-
-- (NSString *)deviceIdentifier {
-    static NSString *identifier = nil;
-    if (identifier) return identifier;
-    NSString *key = @"com.youdaibao.deviceid";
-    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    identifier = [ud stringForKey:key];
-    if (!identifier) {
-        identifier = [[NSUUID UUID] UUIDString];
-        [ud setObject:identifier forKey:key];
-    }
-    return identifier;
 }
 
 - (void)setAbnormalFromString:(NSString *)str {
@@ -436,7 +386,13 @@
     [self saveToFile];
 }
 
-// 修正 nextAbnormalAccount 边界和移除逻辑
+- (void)enterAbnormalMode {
+    if (self.abnormalOrdered.count == 0) return;
+    self.abnormalMode = YES;
+    self.abnormalCurrentIndex = 0;
+    [self saveToFile];
+}
+
 - (NSDictionary *)nextAbnormalAccount {
     if (!self.abnormalMode || self.abnormalOrdered.count == 0) return nil;
     if (self.abnormalCurrentIndex >= self.abnormalOrdered.count) {
@@ -450,15 +406,13 @@
     return self.accounts[lineNumber - 1];
 }
 
-// removeLastHandledAbnormal 移除刚处理完的那个异常（索引 abnormalCurrentIndex-1）
 - (void)removeLastHandledAbnormal {
-    if (self.abnormalCurrentIndex == 0) return;
+    if (self.abnormalCurrentIndex == 0 || self.abnormalOrdered.count == 0) return;
     NSInteger idx = self.abnormalCurrentIndex - 1;
     if (idx < self.abnormalOrdered.count) {
         NSNumber *removed = self.abnormalOrdered[idx];
         [self.abnormalSet removeObject:removed];
         [self.abnormalOrdered removeObjectAtIndex:idx];
-        // 回退索引，因为数组元素前移
         self.abnormalCurrentIndex = idx;
     }
     if (self.abnormalOrdered.count == 0) {
@@ -466,6 +420,10 @@
         self.abnormalCurrentIndex = 0;
     }
     [self saveToFile];
+}
+
+- (BOOL)isAbnormalRemaining {
+    return self.abnormalOrdered.count > 0;
 }
 
 #pragma mark - 持久化
@@ -477,10 +435,6 @@
 
 - (void)saveToFile {
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    [ud setBool:self.abnormalMode forKey:@"abnormalMode"];
-	[ud setObject:[NSKeyedArchiver archivedDataWithRootObject:self.abnormalSet] forKey:@"abnormalSet"];
-	[ud setObject:[NSKeyedArchiver archivedDataWithRootObject:self.abnormalOrdered] forKey:@"abnormalOrdered"];
-	[ud setInteger:self.abnormalCurrentIndex forKey:@"abnormalCurrentIndex"];
     [ud setInteger:self.currentIndex forKey:@"currentIndex"];
     [ud setBool:self.tapLocked forKey:@"tapLocked"];
     [ud setBool:self.autoLock forKey:@"autoLock"];
@@ -490,12 +444,20 @@
     [ud setDouble:self.clickCooldown forKey:@"clickCooldown"];
     [ud setDouble:self.lastClickTime forKey:@"lastClickTime"];
     [ud setBool:self.detailedLog forKey:@"detailedLog"];
+    [ud setBool:self.antiDetection forKey:@"antiDetection"];
     [ud setObject:self.serverURL ?: @"" forKey:@"serverURL"];
     [ud setObject:self.currentAccount ?: @"" forKey:@"currentAccount"];
+    if (self.roundStartTime) [ud setObject:self.roundStartTime forKey:@"roundStartTime"];
+    else [ud removeObjectForKey:@"roundStartTime"];
+    if (self.roundEndTime) [ud setObject:self.roundEndTime forKey:@"roundEndTime"];
+    else [ud removeObjectForKey:@"roundEndTime"];
     [ud setObject:NSStringFromCGPoint(self.floatWindowPoint) forKey:@"floatWindowPoint"];
+    // 异常列表存储为字符串
+    [ud setObject:[self abnormalString] forKey:@"abnormalString"];
+    [ud setBool:self.abnormalMode forKey:@"abnormalMode"];
     [ud synchronize];
-    [ud setBool:self.antiDetection forKey:@"antiDetection"];
 
+    // 同时存储账号列表到 plist
     NSMutableArray *arr = [NSMutableArray array];
     for (NSDictionary *d in _accounts) [arr addObject:d];
     NSDictionary *data = @{
@@ -510,6 +472,7 @@
         @"clickCooldown": @(self.clickCooldown),
         @"lastClickTime": @(self.lastClickTime),
         @"detailedLog": @(self.detailedLog),
+        @"antiDetection": @(self.antiDetection),
         @"serverURL": self.serverURL ?: @"",
         @"currentAccount": self.currentAccount ?: @""
     };
@@ -518,49 +481,38 @@
 
 - (void)loadFromFile {
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    if ([ud objectForKey:@"currentIndex"] != nil) {
-        self.abnormalMode = [ud boolForKey:@"abnormalMode"];
-		NSData *setData = [ud objectForKey:@"abnormalSet"];
-		if (setData) self.abnormalSet = [NSKeyedUnarchiver unarchiveObjectWithData:setData] ?: [NSMutableSet set];
-		NSData *orderData = [ud objectForKey:@"abnormalOrdered"];
-		if (orderData) self.abnormalOrdered = [NSKeyedUnarchiver unarchiveObjectWithData:orderData] ?: [NSMutableArray array];
-		self.abnormalCurrentIndex = [ud integerForKey:@"abnormalCurrentIndex"];
-        self.currentIndex = [ud integerForKey:@"currentIndex"];
-        self.tapLocked = [ud boolForKey:@"tapLocked"];
-        self.autoLock = [ud boolForKey:@"autoLock"];
-        self.floatLocked = [ud boolForKey:@"floatLocked"];
-        self.pasteDelay = [ud doubleForKey:@"pasteDelay"];
-        self.passwordDelay = [ud doubleForKey:@"passwordDelay"];
-        self.clickCooldown = [ud doubleForKey:@"clickCooldown"];
-        self.lastClickTime = [ud doubleForKey:@"lastClickTime"];
-        self.detailedLog = [ud boolForKey:@"detailedLog"];
-        self.antiDetection = [ud boolForKey:@"antiDetection"];
-        self.serverURL = [ud stringForKey:@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
-        self.currentAccount = [ud stringForKey:@"currentAccount"] ?: @"";
-        NSString *fpStr = [ud stringForKey:@"floatWindowPoint"];
-        if (fpStr) self.floatWindowPoint = CGPointFromString(fpStr);
-    } else {
-        NSDictionary *data = [NSDictionary dictionaryWithContentsOfFile:[self dataFilePath]];
-        if (data) {
-            self.currentIndex = [data[@"currentIndex"] integerValue];
-            self.tapLocked = [data[@"tapLocked"] boolValue];
-            self.autoLock = [data[@"autoLock"] boolValue];
-            self.floatLocked = [data[@"floatLocked"] boolValue];
-            self.pasteDelay = [data[@"pasteDelay"] doubleValue];
-            self.passwordDelay = [data[@"passwordDelay"] doubleValue];
-            self.clickCooldown = data[@"clickCooldown"] ? [data[@"clickCooldown"] doubleValue] : 30.0;
-            self.lastClickTime = data[@"lastClickTime"] ? [data[@"lastClickTime"] doubleValue] : 0;
-            self.detailedLog = data[@"detailedLog"] ? [data[@"detailedLog"] boolValue] : NO;
-            self.serverURL = data[@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
-            self.currentAccount = data[@"currentAccount"] ?: @"";
-            NSString *fp = data[@"floatWindowPoint"];
-            if (fp) self.floatWindowPoint = CGPointFromString(fp);
-        }
+    self.currentIndex = [ud integerForKey:@"currentIndex"];
+    self.tapLocked = [ud boolForKey:@"tapLocked"];
+    self.autoLock = [ud boolForKey:@"autoLock"];
+    self.floatLocked = [ud boolForKey:@"floatLocked"];
+    self.pasteDelay = [ud doubleForKey:@"pasteDelay"];
+    self.passwordDelay = [ud doubleForKey:@"passwordDelay"];
+    self.clickCooldown = [ud doubleForKey:@"clickCooldown"];
+    self.lastClickTime = [ud doubleForKey:@"lastClickTime"];
+    self.detailedLog = [ud boolForKey:@"detailedLog"];
+    self.antiDetection = [ud boolForKey:@"antiDetection"];
+    self.serverURL = [ud stringForKey:@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
+    self.currentAccount = [ud stringForKey:@"currentAccount"] ?: @"";
+    if ([ud objectForKey:@"roundStartTime"]) self.roundStartTime = [ud objectForKey:@"roundStartTime"];
+    else self.roundStartTime = nil;
+    if ([ud objectForKey:@"roundEndTime"]) self.roundEndTime = [ud objectForKey:@"roundEndTime"];
+    else self.roundEndTime = nil;
+    NSString *fpStr = [ud stringForKey:@"floatWindowPoint"];
+    if (fpStr) self.floatWindowPoint = CGPointFromString(fpStr);
+
+    // 恢复异常列表
+    NSString *abStr = [ud stringForKey:@"abnormalString"];
+    if (abStr.length > 0) {
+        [self setAbnormalFromString:abStr];
     }
+    self.abnormalMode = [ud boolForKey:@"abnormalMode"];
+
+    // 从 plist 读取账号列表
     NSDictionary *data = [NSDictionary dictionaryWithContentsOfFile:[self dataFilePath]];
     NSArray *arr = data[@"accounts"];
     if (arr) {
         _accounts = [arr mutableCopy];
+        // 兼容旧数据：若缺失 fakedID/fakedName，自动生成
         BOOL modified = NO;
         for (NSMutableDictionary *acc in _accounts) {
             if (!acc[@"fakedID"]) {

@@ -28,22 +28,17 @@
 @property (nonatomic, assign) BOOL antiDetection;
 @property (nonatomic, assign) BOOL locationLoggedThisCycle;
 
-// 异常账号相关
-@property (nonatomic, strong) NSMutableSet<NSNumber *> *abnormalSet;       // 异常账号索引（1-based）
-@property (nonatomic, strong) NSMutableArray<NSNumber *> *abnormalOrdered; // 有序异常列表
-@property (nonatomic, assign) NSInteger abnormalCurrentIndex;              // 当前异常处理到的下标
-@property (nonatomic, assign) BOOL abnormalMode;                           // 是否处于异常处理模式
-
-- (NSString *)currentRoundName;
-- (void)switchToNextRound;
-- (void)finishRound;
+// 异常账号
+@property (nonatomic, strong) NSMutableSet<NSNumber *> *abnormalSet;
+@property (nonatomic, strong) NSMutableArray<NSNumber *> *abnormalOrdered;
+@property (nonatomic, assign) NSInteger abnormalCurrentIndex;
+@property (nonatomic, assign) BOOL abnormalMode;
 
 - (NSDictionary *)nextAccount;
 - (void)updateAccountsWithText:(NSString *)text;
 - (NSString *)exportAccountsText;
 
 - (void)recordLogWithIndex:(NSInteger)index total:(NSInteger)total account:(NSString *)account;
-- (void)recordLogRoundStart;
 - (NSString *)logFilePath;
 - (NSString *)readLogContent;
 - (void)clearLog;
@@ -64,16 +59,14 @@
 - (void)saveToFile;
 - (NSString *)deviceIdentifier;
 
-// 异常处理方法
-- (void)recordAbnormalWithIndex:(NSInteger)index;        // 记录异常账号 (1-based)
-- (void)clearAbnormal;                                   // 清空所有异常
-- (NSString *)abnormalString;                            // 返回逗号分隔的异常编号字符串
-- (void)enterAbnormalMode;                               // 进入异常处理模式
-- (NSDictionary *)nextAbnormalAccount;                   // 返回当前待处理的异常账号信息，并移动指针
-- (void)removeAbnormalAtIndex:(NSInteger)index;           // 处理完一个异常后，若不再异常则移除
-- (BOOL)isAbnormalRemaining;                             // 是否还有未处理的异常
-// 移除最后一个被处理的异常（内部调用，配合 nextAbnormalAccount 使用）
-- (void)removeLastHandledAbnormal;
-// 根据字符串重新设置异常列表（如 "1,3,5"）
+// 异常处理
+- (void)recordAbnormalWithIndex:(NSInteger)index;
+- (void)clearAbnormal;
+- (NSString *)abnormalString;
 - (void)setAbnormalFromString:(NSString *)str;
+- (void)enterAbnormalMode;
+- (NSDictionary *)nextAbnormalAccount;
+- (void)removeLastHandledAbnormal;
+- (BOOL)isAbnormalRemaining;
+
 @end
