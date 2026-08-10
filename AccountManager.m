@@ -46,6 +46,7 @@
     return self;
 }
 
+// ---- 账号管理 ----
 - (NSArray<NSDictionary *> *)accounts { return [_accounts copy]; }
 
 - (NSDictionary *)nextAccount {
@@ -122,8 +123,7 @@
     [self saveToFile];
 }
 
-#pragma mark - 伪装标识
-
+// ---- 伪装标识 ----
 - (NSString *)generateFakedIDForAccount:(NSString *)account {
     if (!account || account.length == 0) return @"00000000-0000-0000-0000-000000000000";
     NSData *data = [account dataUsingEncoding:NSUTF8StringEncoding];
@@ -341,6 +341,7 @@
 
 #pragma mark - 异常处理
 
+// ---- 异常处理 ----
 - (void)recordAbnormalWithIndex:(NSInteger)index {
     if (index < 1 || index > self.accounts.count) return;
     NSNumber *idx = @(index);
@@ -360,15 +361,13 @@
 }
 
 - (NSString *)abnormalString {
-    if (self.abnormalOrdered.count == 0) return @"";
     return [self.abnormalOrdered componentsJoinedByString:@","];
 }
 
 - (void)setAbnormalFromString:(NSString *)str {
     [self.abnormalSet removeAllObjects];
     [self.abnormalOrdered removeAllObjects];
-    NSArray *parts = [str componentsSeparatedByString:@","];
-    for (NSString *part in parts) {
+    for (NSString *part in [str componentsSeparatedByString:@","]) {
         NSString *trimmed = [part stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
         if (trimmed.length == 0) continue;
         NSInteger num = [trimmed integerValue];
@@ -424,8 +423,7 @@
     return self.abnormalOrdered.count > 0;
 }
 
-#pragma mark - 持久化（强化版）
-
+// ========== 持久化（带保护） ==========
 - (NSString *)dataFilePath {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     return [paths.firstObject stringByAppendingPathComponent:@"com.youdaibao.config.plist"];
@@ -433,6 +431,7 @@
 
 - (void)saveToFile {
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    // 基本属性
     [ud setInteger:self.currentIndex forKey:@"currentIndex"];
     [ud setBool:self.tapLocked forKey:@"tapLocked"];
     [ud setBool:self.autoLock forKey:@"autoLock"];
@@ -455,16 +454,18 @@
     [ud setObject:[self abnormalString] forKey:@"abnormalString"];
     [ud setBool:self.abnormalMode forKey:@"abnormalMode"];
 
-    // 账号列表通过 JSON 强保存（防丢失）
-    NSError *error;
-    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:_accounts options:0 error:&error];
-    if (jsonData) {
-        NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
-        [ud setObject:jsonString forKey:@"accountsJSON"];
+    // 账号列表：仅当有数据时才更新 JSON，防止覆盖有效数据
+    if (_accounts.count > 0) {
+        NSError *error;
+        NSData *jsonData = [NSJSONSerialization dataWithJSONObject:_accounts options:0 error:&error];
+        if (jsonData) {
+            NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+            [ud setObject:jsonString forKey:@"accountsJSON"];
+        }
     }
     [ud synchronize];
 
-    // 同时写入 plist 作为备份
+    // 同时写入 plist 备份
     NSMutableArray *arr = [NSMutableArray array];
     for (NSDictionary *d in _accounts) [arr addObject:d];
     NSDictionary *data = @{
@@ -501,9 +502,7 @@
     self.serverURL = [ud stringForKey:@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
     self.currentAccount = [ud stringForKey:@"currentAccount"] ?: @"";
     if ([ud objectForKey:@"roundStartTime"]) self.roundStartTime = [ud objectForKey:@"roundStartTime"];
-    else self.roundStartTime = nil;
     if ([ud objectForKey:@"roundEndTime"]) self.roundEndTime = [ud objectForKey:@"roundEndTime"];
-    else self.roundEndTime = nil;
     NSString *fpStr = [ud stringForKey:@"floatWindowPoint"];
     if (fpStr) self.floatWindowPoint = CGPointFromString(fpStr);
 
@@ -512,42 +511,35 @@
     if (abStr.length > 0) [self setAbnormalFromString:abStr];
     self.abnormalMode = [ud boolForKey:@"abnormalMode"];
 
-    // 账号列表：优先从 NSUserDefaults 的 JSON 恢复
+    // 恢复账号列表：优先 JSON，但如果解析出的数组为空，则忽略
+    BOOL loaded = NO;
     NSString *jsonString = [ud stringForKey:@"accountsJSON"];
     if (jsonString.length > 0) {
         NSData *jsonData = [jsonString dataUsingEncoding:NSUTF8StringEncoding];
         NSError *error;
         NSArray *jsonArray = [NSJSONSerialization JSONObjectWithData:jsonData options:0 error:&error];
-        if (jsonArray && [jsonArray isKindOfClass:[NSArray class]]) {
+        if (jsonArray && [jsonArray isKindOfClass:[NSArray class]] && jsonArray.count > 0) {
             _accounts = [jsonArray mutableCopy];
-            // 兼容旧数据
-            BOOL modified = NO;
-            for (NSMutableDictionary *acc in _accounts) {
-                if (!acc[@"fakedID"]) {
-                    acc[@"fakedID"] = [self generateFakedIDForAccount:acc[@"account"]];
-                    modified = YES;
-                }
-                if (!acc[@"fakedName"]) {
-                    acc[@"fakedName"] = @"iPhone";
-                    modified = YES;
-                }
-            }
-            if (modified) [self saveToFile];
-            return;
+            loaded = YES;
         }
     }
 
-    // JSON 失败，尝试 plist
-    NSDictionary *data = [NSDictionary dictionaryWithContentsOfFile:[self dataFilePath]];
-    NSArray *arr = data[@"accounts"];
-    if (arr) {
-        _accounts = [arr mutableCopy];
-    } else {
-        // 最终降级：保留空数组（首次启动正常）
+    // JSON 无效或为空，尝试 plist
+    if (!loaded) {
+        NSDictionary *data = [NSDictionary dictionaryWithContentsOfFile:[self dataFilePath]];
+        NSArray *arr = data[@"accounts"];
+        if (arr && arr.count > 0) {
+            _accounts = [arr mutableCopy];
+            loaded = YES;
+        }
+    }
+
+    // 都失败则空数组（首次启动）
+    if (!loaded) {
         _accounts = [NSMutableArray array];
     }
 
-    // 兼容旧数据（同前）
+    // 兼容旧数据（补全 fakedID/fakedName）
     BOOL modified = NO;
     for (NSMutableDictionary *acc in _accounts) {
         if (!acc[@"fakedID"]) {
@@ -562,5 +554,6 @@
     if (modified) [self saveToFile];
     self.currentRoundRecords = [NSMutableArray array];
 }
+
 
 @end
