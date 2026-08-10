@@ -46,7 +46,6 @@
     return self;
 }
 
-// 账号基本操作（同前，略）
 - (NSArray<NSDictionary *> *)accounts { return [_accounts copy]; }
 
 - (NSDictionary *)nextAccount {
@@ -112,6 +111,15 @@
          acc[@"account"], acc[@"password"], acc[@"fakedID"] ?: @"", acc[@"fakedName"] ?: @"iPhone"];
     }
     return text;
+}
+
+- (void)resetProgress {
+    self.currentIndex = 0;
+    self.roundStartTime = nil;
+    self.roundEndTime = nil;
+    self.tapLocked = NO;
+    self.currentAccount = @"";
+    [self saveToFile];
 }
 
 #pragma mark - 伪装标识
@@ -300,10 +308,9 @@
     return identifier;
 }
 
-#pragma mark - 清除设备标识缓存（可选）
+#pragma mark - 清除设备标识缓存
 
 - (void)clearDeviceIdentifierCache {
-    // 清除 UserDefaults 可疑键
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     NSArray *possibleKeys = @[@"deviceId", @"IDFV", @"IDFA", @"deviceIdentifier",
                               @"com.apple.deviceid", @"com.apple.identifier",
@@ -313,7 +320,6 @@
     }
     [ud synchronize];
 
-    // 清除 Keychain 可能存储的设备标识
     NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown";
     NSArray *services = @[bundleID,
                           [bundleID stringByAppendingString:@".deviceid"],
@@ -418,7 +424,8 @@
     return self.abnormalOrdered.count > 0;
 }
 
-// ========== 持久化（增强版） ==========
+#pragma mark - 持久化（强化版）
+
 - (NSString *)dataFilePath {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     return [paths.firstObject stringByAppendingPathComponent:@"com.youdaibao.config.plist"];
@@ -426,7 +433,6 @@
 
 - (void)saveToFile {
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    // 1. 基本属性
     [ud setInteger:self.currentIndex forKey:@"currentIndex"];
     [ud setBool:self.tapLocked forKey:@"tapLocked"];
     [ud setBool:self.autoLock forKey:@"autoLock"];
@@ -445,11 +451,11 @@
     else [ud removeObjectForKey:@"roundEndTime"];
     [ud setObject:NSStringFromCGPoint(self.floatWindowPoint) forKey:@"floatWindowPoint"];
 
-    // 2. 异常列表存储为字符串
+    // 异常列表
     [ud setObject:[self abnormalString] forKey:@"abnormalString"];
     [ud setBool:self.abnormalMode forKey:@"abnormalMode"];
 
-    // 3. 账号列表转为 JSON 存储（防丢失）
+    // 账号列表通过 JSON 强保存（防丢失）
     NSError *error;
     NSData *jsonData = [NSJSONSerialization dataWithJSONObject:_accounts options:0 error:&error];
     if (jsonData) {
@@ -458,7 +464,7 @@
     }
     [ud synchronize];
 
-    // 4. 同时保存到 plist（备份）
+    // 同时写入 plist 作为备份
     NSMutableArray *arr = [NSMutableArray array];
     for (NSDictionary *d in _accounts) [arr addObject:d];
     NSDictionary *data = @{
@@ -482,7 +488,6 @@
 
 - (void)loadFromFile {
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    // 读取基本属性
     self.currentIndex = [ud integerForKey:@"currentIndex"];
     self.tapLocked = [ud boolForKey:@"tapLocked"];
     self.autoLock = [ud boolForKey:@"autoLock"];
@@ -504,20 +509,18 @@
 
     // 恢复异常列表
     NSString *abStr = [ud stringForKey:@"abnormalString"];
-    if (abStr.length > 0) {
-        [self setAbnormalFromString:abStr];
-    }
+    if (abStr.length > 0) [self setAbnormalFromString:abStr];
     self.abnormalMode = [ud boolForKey:@"abnormalMode"];
 
-    // 账号列表：优先从 NSUserDefaults 的 JSON 字符串恢复
+    // 账号列表：优先从 NSUserDefaults 的 JSON 恢复
     NSString *jsonString = [ud stringForKey:@"accountsJSON"];
     if (jsonString.length > 0) {
         NSData *jsonData = [jsonString dataUsingEncoding:NSUTF8StringEncoding];
         NSError *error;
         NSArray *jsonArray = [NSJSONSerialization JSONObjectWithData:jsonData options:0 error:&error];
-        if (jsonArray) {
+        if (jsonArray && [jsonArray isKindOfClass:[NSArray class]]) {
             _accounts = [jsonArray mutableCopy];
-            // 兼容旧数据（无 fakedID/fakedName）
+            // 兼容旧数据
             BOOL modified = NO;
             for (NSMutableDictionary *acc in _accounts) {
                 if (!acc[@"fakedID"]) {
@@ -530,32 +533,33 @@
                 }
             }
             if (modified) [self saveToFile];
-            self.currentRoundRecords = [NSMutableArray array];
             return;
         }
     }
 
-    // 若 JSON 恢复失败，尝试从 plist 恢复
+    // JSON 失败，尝试 plist
     NSDictionary *data = [NSDictionary dictionaryWithContentsOfFile:[self dataFilePath]];
     NSArray *arr = data[@"accounts"];
     if (arr) {
         _accounts = [arr mutableCopy];
-        BOOL modified = NO;
-        for (NSMutableDictionary *acc in _accounts) {
-            if (!acc[@"fakedID"]) {
-                acc[@"fakedID"] = [self generateFakedIDForAccount:acc[@"account"]];
-                modified = YES;
-            }
-            if (!acc[@"fakedName"]) {
-                acc[@"fakedName"] = @"iPhone";
-                modified = YES;
-            }
-        }
-        if (modified) [self saveToFile];
     } else {
-        // 都失败则保留空数组（首次启动正常情况）
+        // 最终降级：保留空数组（首次启动正常）
         _accounts = [NSMutableArray array];
     }
+
+    // 兼容旧数据（同前）
+    BOOL modified = NO;
+    for (NSMutableDictionary *acc in _accounts) {
+        if (!acc[@"fakedID"]) {
+            acc[@"fakedID"] = [self generateFakedIDForAccount:acc[@"account"]];
+            modified = YES;
+        }
+        if (!acc[@"fakedName"]) {
+            acc[@"fakedName"] = @"iPhone";
+            modified = YES;
+        }
+    }
+    if (modified) [self saveToFile];
     self.currentRoundRecords = [NSMutableArray array];
 }
 
