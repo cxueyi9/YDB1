@@ -68,5 +68,5 @@
 - (NSDictionary *)nextAbnormalAccount;
 - (void)removeLastHandledAbnormal;
 - (BOOL)isAbnormalRemaining;
-
+- (void)loadFromFile;   // 公开加载方法，用于界面刷新
 @end
