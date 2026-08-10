@@ -39,7 +39,7 @@ static void logFake(NSString *type, NSString *value) {
     [[AccountManager shared] appendLog:msg];
     if ([FakerConfig isDebugMode]) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [FloatWindow showToast:[NSString stringWithFormat:@"%@ 已伪装", type]];
+            [FloatWindow showToast:[NSString stringWithFormat:@"本机标识%@ 已伪装", type]];
         });
     }
 }

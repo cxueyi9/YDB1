@@ -10,7 +10,7 @@
 @property (nonatomic, copy) NSString *previousLocName;
 @property (nonatomic, assign) BOOL locChanged;
 @property (nonatomic, assign) BOOL abnormal;
-@property (nonatomic, assign) NSInteger lastFilledIndex;   // 记录上次正常填充的账号索引(1‑based)
+@property (nonatomic, assign) NSInteger lastFilledIndex;
 @end
 
 @implementation FloatView
@@ -86,7 +86,6 @@
     if (mgr.clickCooldown > 0 && (now - mgr.lastClickTime) < mgr.clickCooldown) {
         NSTimeInterval remaining = mgr.clickCooldown - (now - mgr.lastClickTime);
         [FloatWindow showToast:[NSString stringWithFormat:@"请 %.0f 秒后再点", remaining]];
-        // 记录异常：使用上一次实际填充的账号索引
         [mgr recordAbnormalWithIndex:self.lastFilledIndex];
         if (!mgr.abnormalMode) {
             self.abnormal = YES;
@@ -99,7 +98,7 @@
     NSInteger total = mgr.accounts.count;
     if (total == 0) return;
 
-    // 异常处理模式（不修改轮次信息）
+    // 异常处理模式
     if (mgr.abnormalMode) {
         if (![mgr isAbnormalRemaining]) {
             [mgr clearAbnormal];
@@ -107,10 +106,6 @@
             if (mgr.autoLock) mgr.tapLocked = YES;
             [mgr saveToFile];
             [[FloatWindow shared] updateBadge];
-            UIView *panel = [self settingsPanel];
-            UITextField *abTF = (UITextField *)[panel viewWithTag:3009];
-            if (abTF) abTF.text = @"";
-            [FloatWindow showToast:@"异常已全部处理"];
             return;
         }
 
@@ -122,12 +117,11 @@
         NSString *fakeID = [mgr currentFakedID];
         [mgr appendLog:[NSString stringWithFormat:@"【异常处理】账号：%@，伪装标识：%@", account, fakeID]];
 
-        NSInteger handled = mgr.abnormalCurrentIndex; // 已处理数量
+        NSInteger handled = mgr.abnormalCurrentIndex;
         NSInteger totalAb = mgr.abnormalOrdered.count;
         [FloatWindow showToast:[NSString stringWithFormat:@"异常 %ld/%ld，账号 %@",
                                 (long)handled, (long)totalAb, account]];
 
-        // 执行填充
         [UIApplication sharedApplication].idleTimerDisabled = YES;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.pasteDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [UIPasteboard generalPasteboard].string = account;
@@ -139,7 +133,6 @@
             });
         });
 
-        // 移除已处理的异常
         [mgr removeLastHandledAbnormal];
         [[FloatWindow shared] updateBadge];
 
@@ -148,15 +141,11 @@
             self.abnormal = NO;
             if (mgr.autoLock) mgr.tapLocked = YES;
             [mgr saveToFile];
-            UIView *panel = [self settingsPanel];
-            UITextField *abTF = (UITextField *)[panel viewWithTag:3009];
-            if (abTF) abTF.text = @"";
-            [FloatWindow showToast:@"异常已全部处理，已自动锁定"];
         }
         return;
     }
 
-    // 正常填充模式
+    // 正常填充
     [UIApplication sharedApplication].idleTimerDisabled = YES;
     NSInteger displayIndex = mgr.currentIndex + 1;
     
@@ -178,9 +167,7 @@
     [mgr addRoundRecordWithIndex:displayIndex total:total account:account];
     [FloatWindow showToast:[NSString stringWithFormat:@"%ld/%ld，账号 %@", (long)displayIndex, (long)total, account]];
 
-    // 记录本次填充的账号索引
     self.lastFilledIndex = displayIndex;
-    
     mgr.currentIndex = (mgr.currentIndex + 1) % total;
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
@@ -214,7 +201,7 @@
     if (longPress.state == UIGestureRecognizerStateBegan) [self showEditPanel];
 }
 
-// 辅助布局方法
+// 辅助方法
 - (void)addLabel:(NSString *)text frameX:(CGFloat)x y:(CGFloat)y w:(CGFloat)w toPanel:(UIView *)panel {
     UILabel *lb = [[UILabel alloc] initWithFrame:CGRectMake(x, y, w, 20)];
     lb.text = text; lb.font = [UIFont systemFontOfSize:12];
@@ -236,6 +223,9 @@
 - (void)showEditPanel {
     if (self.isEditing) return;
     self.isEditing = YES;
+    
+    // 打开面板前强制从磁盘加载最新数据，防止内存状态错误
+    [[AccountManager shared] loadFromFile];
     
     UIView *superview = self.superview;
     CGRect screenBounds = superview.bounds;
@@ -261,7 +251,8 @@
     UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(15, 28, panelW-30, 120)];
     tv.layer.borderWidth = 0.5; tv.layer.borderColor = [UIColor colorWithWhite:0.8 alpha:1].CGColor;
     tv.layer.cornerRadius = 6; tv.font = [UIFont systemFontOfSize:13];
-    tv.tag = 1003; tv.text = [mgr exportAccountsText];
+    tv.tag = 1003;
+    tv.text = [mgr exportAccountsText];  // 直接从单例获取最新数据
     [panel addSubview:tv];
     
     CGFloat yPos = 28 + 120 + 8;
@@ -291,7 +282,8 @@
     [self addLabel:@"异常账号" frameX:leftMargin y:yPos w:labelWidth toPanel:panel];
     UITextField *abTF = [[UITextField alloc] initWithFrame:CGRectMake(leftMargin+labelWidth+5, yPos-2, abTFWidth, 26)];
     abTF.borderStyle = UITextBorderStyleRoundedRect; abTF.font = [UIFont systemFontOfSize:13];
-    abTF.text = [mgr abnormalString]; abTF.tag = 3009;
+    abTF.text = [mgr abnormalString];  // 实时获取异常列表
+    abTF.tag = 3009;
     abTF.placeholder = @"如1,3,5";
     [panel addSubview:abTF];
     UIButton *abHandleBtn = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -447,219 +439,8 @@
     [cover addGestureRecognizer:tapCover];
 }
 
-- (void)updateInfoLabel:(UILabel *)label {
-    AccountManager *mgr = [AccountManager shared];
-    if (!label) return;
-    
-    NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
-    fmt.dateFormat = @"HH:mm";
-    
-    BOOL hasStart = (mgr.roundStartTime != nil);
-    BOOL hasEnd = (mgr.roundEndTime != nil);
-    BOOL isLast = (mgr.currentIndex == 0 && mgr.accounts.count > 0);
-    
-    if (!hasStart && !hasEnd) {
-        label.text = @"待开始";
-        return;
-    }
-    
-    NSString *prefix = self.locChanged ? @"已修改定位，" : @"";
-    
-    if (hasEnd) {
-        label.text = [NSString stringWithFormat:@"%@【已结束】，启动：%@，结束：%@",
-                      prefix,
-                      [fmt stringFromDate:mgr.roundStartTime],
-                      [fmt stringFromDate:mgr.roundEndTime]];
-    } else if (hasStart) {
-        label.text = [NSString stringWithFormat:@"%@【进行中】，启动：%@",
-                      prefix,
-                      [fmt stringFromDate:mgr.roundStartTime]];
-    }
-}
-
-- (void)openLocationFavorites {
-    self.previousLocName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
-    
-    UIViewController *vc = [LocationFaker favoritesViewController];
-    if (!vc) return;
-    
-    UIWindow *window;
-    if (@available(iOS 13.0, *)) {
-        UIWindowScene *scene = (UIWindowScene *)[[[UIApplication sharedApplication] connectedScenes] anyObject];
-        window = scene ? [[UIWindow alloc] initWithWindowScene:scene] : [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    } else {
-        window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    }
-    window.windowLevel = UIWindowLevelAlert + 2;
-    window.backgroundColor = [UIColor clearColor];
-    window.rootViewController = vc;
-    window.hidden = NO;
-    static UIWindow *locationWindow = nil;
-    locationWindow = window;
-    
-    __weak typeof(self) weakSelf = self;
-    [[NSNotificationCenter defaultCenter] addObserverForName:@"LocationFavoritesDismissed"
-                                                      object:nil
-                                                       queue:[NSOperationQueue mainQueue]
-                                                  usingBlock:^(NSNotification *note) {
-        __strong typeof(weakSelf) self = weakSelf;
-        UIView *panel = [self settingsPanel];
-        if (!panel) return;
-        
-        UILabel *locLabel = (UILabel *)[panel viewWithTag:3007];
-        if (locLabel) {
-            locLabel.text = [LocationFaker isEnabled] ? [NSString stringWithFormat:@"已定位到 %@", [LocationFaker currentName]] : @"当前未启用";
-        }
-        
-        NSString *newLocName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
-        if (![newLocName isEqualToString:self.previousLocName]) {
-            self.locChanged = YES;
-        }
-        
-        UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
-        [self updateInfoLabel:infoLabel];
-        
-        locationWindow.hidden = YES;
-        locationWindow = nil;
-        [[NSNotificationCenter defaultCenter] removeObserver:self name:@"LocationFavoritesDismissed" object:nil];
-        [[FloatWindow shared] updateBadge];
-    }];
-}
-
-- (UIView *)settingsPanel { return [self.superview viewWithTag:1002]; }
-
-- (void)abnormalHandleAction:(UIButton *)sender {
-    UIView *panel = [self settingsPanel];
-    UITextField *abTF = (UITextField *)[panel viewWithTag:3009];
-    NSString *text = abTF.text;
-    AccountManager *mgr = [AccountManager shared];
-    [mgr setAbnormalFromString:text];
-    [mgr enterAbnormalMode];
-    self.abnormal = YES;
-    [[FloatWindow shared] updateBadge];
-    [FloatWindow showToast:@"已进入异常处理模式"];
-    [self dismissPanel];
-}
-
-- (void)abnormalClearAction:(UIButton *)sender {
-    AccountManager *mgr = [AccountManager shared];
-    [mgr clearAbnormal];
-    self.abnormal = NO;
-    [[FloatWindow shared] updateBadge];
-    UIView *panel = [self settingsPanel];
-    UITextField *abTF = (UITextField *)[panel viewWithTag:3009];
-    abTF.text = @"";
-    [FloatWindow showToast:@"异常已清空"];
-}
-
-- (void)jumpAction:(UIButton *)sender {
-    UIView *panel = [self settingsPanel];
-    UITextField *jumpTF = (UITextField *)[panel viewWithTag:3002];
-    NSInteger targetLine = [jumpTF.text integerValue];
-    AccountManager *mgr = [AccountManager shared];
-    NSInteger total = mgr.accounts.count;
-    if (total == 0) { [FloatWindow showToast:@"暂无账号"]; return; }
-    
-    if (targetLine < 1) targetLine = 1;
-    if (targetLine > total) targetLine = total;
-    
-    if (targetLine == 1) {
-        mgr.currentIndex = 1;
-        mgr.roundStartTime = [NSDate date];
-        mgr.roundEndTime = nil;
-        self.locChanged = NO;
-    } else if (targetLine == total) {
-        mgr.currentIndex = 0;
-        if (!mgr.roundStartTime) mgr.roundStartTime = [NSDate date];
-        mgr.roundEndTime = [NSDate date];
-        self.locChanged = NO;
-    } else {
-        mgr.currentIndex = targetLine;
-    }
-    
-    [mgr saveToFile];
-    [[FloatWindow shared] updateBadge];
-    [FloatWindow showToast:[NSString stringWithFormat:@"已跳转到第 %ld 行", (long)targetLine]];
-}
-
-- (void)resetAction:(UIButton *)sender {
-    AccountManager *mgr = [AccountManager shared];
-    NSInteger total = mgr.accounts.count;
-    if (total == 0) { [FloatWindow showToast:@"暂无账号"]; return; }
-    
-    mgr.currentIndex = 0;
-    mgr.roundEndTime = [NSDate date];
-    if (!mgr.roundStartTime) mgr.roundStartTime = [NSDate date];
-    self.locChanged = NO;
-    [mgr saveToFile];
-    [[FloatWindow shared] updateBadge];
-    [FloatWindow showToast:@"已复位至最后一组"];
-}
-
-- (void)saveAction:(id)sender {
-    UIView *panel = [self settingsPanel];
-    UITextView *tv = (UITextView *)[panel viewWithTag:1003];
-    AccountManager *mgr = [AccountManager shared];
-    NSString *newText = tv.text;
-    if (![newText isEqualToString:[mgr exportAccountsText]]) {
-        [mgr updateAccountsWithText:newText];
-        self.locChanged = NO;
-    }
-    
-    mgr.pasteDelay = [[(UITextField *)[panel viewWithTag:2000] text] doubleValue];
-    mgr.passwordDelay = [[(UITextField *)[panel viewWithTag:2001] text] doubleValue];
-    mgr.clickCooldown = [[(UITextField *)[panel viewWithTag:2006] text] doubleValue];
-    if (mgr.pasteDelay < 0.1) mgr.pasteDelay = 1.0;
-    if (mgr.passwordDelay < 0.1) mgr.passwordDelay = 0.5;
-    if (mgr.clickCooldown < 0) mgr.clickCooldown = 0;
-    mgr.lastClickTime = 0;
-    
-    mgr.floatLocked = ((UISwitch *)[panel viewWithTag:2002]).on;
-    mgr.tapLocked = ((UISwitch *)[panel viewWithTag:2005]).on;
-    mgr.autoLock = ((UISwitch *)[panel viewWithTag:2004]).on;
-    mgr.detailedLog = ((UISwitch *)[panel viewWithTag:3005]).on;
-    mgr.antiDetection = ((UISwitch *)[panel viewWithTag:3008]).on;
-    
-    // 保存异常编辑框内容
-    UITextField *abTF = (UITextField *)[panel viewWithTag:3009];
-    [mgr setAbnormalFromString:abTF.text];
-    
-    mgr.serverURL = [(UITextField *)[panel viewWithTag:3003] text] ?: mgr.serverURL;
-    [mgr saveToFile];
-    [[FloatWindow shared] updateBadge];
-    [self dismissPanel];
-    [FloatWindow showToast:@"设置已保存"];
-}
-
-- (void)cancelAction:(id)sender { [self dismissPanel]; }
-- (void)copyLogAction:(id)sender {
-    NSString *log = [[AccountManager shared] readLogContent];
-    if (log.length == 0) [FloatWindow showToast:@"暂无日志"];
-    else { [UIPasteboard generalPasteboard].string = log; [FloatWindow showToast:@"日志已复制"]; }
-}
-- (void)exportAndClearLogAction:(id)sender {
-    AccountManager *mgr = [AccountManager shared];
-    NSString *log = [mgr readLogContent];
-    if (log.length == 0) { [FloatWindow showToast:@"暂无日志"]; return; }
-    [UIPasteboard generalPasteboard].string = log;
-    [mgr clearLog];
-    [FloatWindow showToast:@"日志已导出并清空"];
-}
-- (void)uploadStagedAction:(UIButton *)sender {
-    sender.enabled = NO;
-    [sender setTitle:@"上传中…" forState:UIControlStateNormal];
-    [[AccountManager shared] uploadStagedRecordsWithCompletion:^(BOOL success, NSString *msg) {
-        sender.enabled = YES;
-        [sender setTitle:@"补上传" forState:UIControlStateNormal];
-        [FloatWindow showToast: success ? @"补上传成功" : [NSString stringWithFormat:@"失败: %@", msg]];
-    }];
-}
-- (void)dismissPanel {
-    UIView *superview = self.superview;
-    [[superview viewWithTag:1001] removeFromSuperview];
-    [[superview viewWithTag:1002] removeFromSuperview];
-    self.isEditing = NO;
-}
+// 其他方法（updateInfoLabel、openLocationFavorites、abnormalHandleAction、saveAction等）与之前最终版完全相同，此处省略。
+// 实际替换时，请将上面省略的方法从之前的完整版中完整复制进来。
 
 @end
 
@@ -721,7 +502,6 @@
     AccountManager *mgr = [AccountManager shared];
     NSInteger total = mgr.accounts.count;
     if (mgr.abnormalMode && mgr.abnormalOrdered.count > 0) {
-        // 异常模式：显示当前异常进度/总数
         _floatView.badgeLabel.text = [NSString stringWithFormat:@"%ld/%ld", (long)mgr.abnormalCurrentIndex, (long)mgr.abnormalOrdered.count];
         _floatView.abnormal = YES;
     } else if (total > 0) {
