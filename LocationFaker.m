@@ -1,3 +1,4 @@
+// LocationFaker.m 完整代码
 #import "LocationFaker.h"
 #import "AccountManager.h"
 #import "FloatWindow.h"
@@ -22,7 +23,7 @@ static BOOL enabled = NO;
 static CLLocationCoordinate2D fakedCoord = {37.3349, -122.0093};
 static FakeBaseStation fakedBS = {0,0,0,0, NO};
 static NSInteger selectedFavoriteIndex = -1;
-static BOOL fetchingReal = NO;   // 是否正在获取真实信息，此时 Hook 应返回真实值
+static BOOL fetchingReal = NO;   // 正在获取真实信息
 
 static NSString * const kEnabledKey = @"LocationFakerEnabled";
 static NSString * const kLatitudeKey = @"LocationFakerLatitude";
@@ -88,11 +89,9 @@ static CLLocationCoordinate2D replaced_coordinate(id self, SEL _cmd) {
     if (enabled && !fetchingReal) {
         NSString *name = [LocationFaker currentName];
         NSString *hint = fakedBS.hasBaseStation ? @"基站信息已伪装" : @"GPS定位已伪装";
-        // 屏幕提示（不受限制）
         dispatch_async(dispatch_get_main_queue(), ^{
             [FloatWindow showLocationToast:[NSString stringWithFormat:@"%@ %@", hint, name]];
         });
-        // 日志记录（本周期只写一次）
         if ([AccountManager shared].detailedLog && ![AccountManager shared].locationLoggedThisCycle) {
             [[AccountManager shared] appendLog:[NSString stringWithFormat:@"【定位伪装】%@", name]];
             [AccountManager shared].locationLoggedThisCycle = YES;
@@ -206,6 +205,7 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
 
 @end
 
+// ========== 收藏管理控制器 ==========
 @implementation LocationFavoritesVC
 
 - (void)viewDidLoad {
@@ -261,7 +261,7 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
     [self.view addSubview:_lonField];
     y += fieldH + 8;
     
-    // 基站信息
+    // 基站信息 (MCC, MNC, LAC, CID) 四列紧凑布局
     NSArray *bsLabels = @[@"MCC", @"MNC", @"LAC", @"CID"];
     _mccField = [self createBSField]; _mncField = [self createBSField]; _lacField = [self createBSField]; _cidField = [self createBSField];
     NSArray *bsFields = @[_mccField, _mncField, _lacField, _cidField];
@@ -299,6 +299,7 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
     [self.view addSubview:saveBtn];
     y += 44;
     
+    // 收藏列表
     _tableView = [[UITableView alloc] initWithFrame:CGRectMake(margin, y, self.view.bounds.size.width - margin*2, self.view.bounds.size.height - y - 20) style:UITableViewStylePlain];
     _tableView.backgroundColor = [UIColor whiteColor]; _tableView.separatorColor = [UIColor lightGrayColor];
     _tableView.delegate = self; _tableView.dataSource = self; _tableView.rowHeight = 50;
@@ -319,7 +320,6 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
         _locationManager.delegate = self;
         [_locationManager requestWhenInUseAuthorization];
     }
-    // 临时关闭虚拟定位，确保获取真实数据
     fetchingReal = YES;
     [_locationManager requestLocation];
 }
@@ -334,16 +334,14 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
         if (!strongSelf) return;
         strongSelf.latField.text = [NSString stringWithFormat:@"%.6f", coord.latitude];
         strongSelf.lonField.text = [NSString stringWithFormat:@"%.6f", coord.longitude];
-        if (bs.hasBaseStation) {
-            strongSelf.mccField.text = [NSString stringWithFormat:@"%ld", (long)bs.mcc];
-            strongSelf.mncField.text = [NSString stringWithFormat:@"%ld", (long)bs.mnc];
-            strongSelf.lacField.text = [NSString stringWithFormat:@"%ld", (long)bs.lac];
-            strongSelf.cidField.text = [NSString stringWithFormat:@"%ld", (long)bs.cid];
-        }
+        strongSelf.mccField.text = [NSString stringWithFormat:@"%ld", (long)bs.mcc];
+        strongSelf.mncField.text = [NSString stringWithFormat:@"%ld", (long)bs.mnc];
+        strongSelf.lacField.text = [NSString stringWithFormat:@"%ld", (long)bs.lac];
+        strongSelf.cidField.text = [NSString stringWithFormat:@"%ld", (long)bs.cid];
         UIButton *b = (UIButton *)[strongSelf.view viewWithTag:100];
         b.enabled = YES;
         [b setTitle:@"一键获取真实位置和基站" forState:UIControlStateNormal];
-        fetchingReal = NO; // 恢复伪装
+        fetchingReal = NO;
     };
     [self startRealInfoFetch];
 }
@@ -369,7 +367,7 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
         FakeBaseStation bs;
         bs.mcc = carrier ? [carrier.mobileCountryCode integerValue] : 0;
         bs.mnc = carrier ? [carrier.mobileNetworkCode integerValue] : 0;
-        bs.lac = 0; bs.cid = 0;
+        bs.lac = 0; bs.cid = 0;  // 无法通过公开API获取，留空待手动填写
         bs.hasBaseStation = (carrier != nil);
         self.realInfoCompletion(loc.coordinate, bs);
         self.realInfoCompletion = nil;
@@ -397,21 +395,22 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
     if (lat != 0 || lon != 0) {
         [LocationFaker setCoordinate:CLLocationCoordinate2DMake(lat, lon)];
     }
-    if (_mccField.text.length > 0 || _mncField.text.length > 0) {
-        FakeBaseStation bs;
+    // 读取基站信息（只要有任意字段非空就视为有基站）
+    BOOL hasBS = (_mccField.text.length > 0 || _mncField.text.length > 0 || _lacField.text.length > 0 || _cidField.text.length > 0);
+    FakeBaseStation bs;
+    if (hasBS) {
         bs.mcc = [_mccField.text integerValue];
         bs.mnc = [_mncField.text integerValue];
         bs.lac = [_lacField.text integerValue];
         bs.cid = [_cidField.text integerValue];
         bs.hasBaseStation = YES;
-        [LocationFaker setBaseStation:bs];
     } else {
-        FakeBaseStation bs = fakedBS;
-        bs.hasBaseStation = NO;
-        [LocationFaker setBaseStation:bs];
+        bs = (FakeBaseStation){0,0,0,0, NO};
     }
-    // 不再强制打开定位，完全由开关控制
-    [LocationFaker setEnabled:_enableSwitch.on];
+    [LocationFaker setBaseStation:bs];
+    // 强制打开定位
+    [LocationFaker setEnabled:YES];
+    _enableSwitch.on = YES;
 }
 
 - (void)addNewFavorite {
@@ -439,12 +438,11 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
         @"lat": @(lat),
         @"lon": @(lon)
     }];
-    if (_mccField.text.length > 0) {
-        item[@"mcc"] = @([_mccField.text integerValue]);
-        item[@"mnc"] = @([_mncField.text integerValue]);
-        item[@"lac"] = @([_lacField.text integerValue]);
-        item[@"cid"] = @([_cidField.text integerValue]);
-    }
+    // 保存基站字段
+    if (_mccField.text.length > 0) item[@"mcc"] = @([_mccField.text integerValue]);
+    if (_mncField.text.length > 0) item[@"mnc"] = @([_mncField.text integerValue]);
+    if (_lacField.text.length > 0) item[@"lac"] = @([_lacField.text integerValue]);
+    if (_cidField.text.length > 0) item[@"cid"] = @([_cidField.text integerValue]);
     
     NSInteger idx = -1;
     for (NSInteger i = 0; i < self.dataSource.count; i++) {
@@ -482,8 +480,16 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
     }
     NSDictionary *item = self.dataSource[indexPath.row];
     cell.textLabel.text = item[@"name"];
-    NSString *detail = [NSString stringWithFormat:@"%.4f,%.4f", [item[@"lat"] doubleValue], [item[@"lon"] doubleValue]];
-    if (item[@"mcc"]) detail = [detail stringByAppendingFormat:@" 基站%@", item[@"mcc"]];
+    
+    // 构造详细文本：经纬度 + 基站信息（如果有）
+    NSMutableString *detail = [NSMutableString stringWithFormat:@"%.4f,%.4f", [item[@"lat"] doubleValue], [item[@"lon"] doubleValue]];
+    NSNumber *mcc = item[@"mcc"];
+    if (mcc) {
+        NSString *mnc = item[@"mnc"] ? [item[@"mnc"] stringValue] : @"-";
+        NSString *lac = item[@"lac"] ? [item[@"lac"] stringValue] : @"-";
+        NSString *cid = item[@"cid"] ? [item[@"cid"] stringValue] : @"-";
+        [detail appendFormat:@" | %@-%@-%@-%@", mcc, mnc, lac, cid];
+    }
     cell.detailTextLabel.text = detail;
     return cell;
 }
@@ -498,9 +504,7 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
     _mncField.text = item[@"mnc"] ? [item[@"mnc"] stringValue] : @"";
     _lacField.text = item[@"lac"] ? [item[@"lac"] stringValue] : @"";
     _cidField.text = item[@"cid"] ? [item[@"cid"] stringValue] : @"";
-    // 点击列表项时自动开启定位
-    _enableSwitch.on = YES;
-    [LocationFaker setEnabled:YES];
+    // 点击收藏自动应用并关闭
     [self applyCoords];
     [self doneAction];
 }
@@ -508,19 +512,14 @@ static NSString* replaced_isoCountryCode(id self, SEL _cmd) {
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath { return YES; }
 - (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath {
     if (editingStyle == UITableViewCellEditingStyleDelete) {
-        NSInteger deletedIndex = indexPath.row;
-        BOOL isSelected = (deletedIndex == [LocationFaker selectedFavoriteIndex]);
-        [self.dataSource removeObjectAtIndex:deletedIndex];
+        [self.dataSource removeObjectAtIndex:indexPath.row];
         [[NSUserDefaults standardUserDefaults] setObject:self.dataSource forKey:@"locationFavorites"];
         [[NSUserDefaults standardUserDefaults] synchronize];
         [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
-
-        if (isSelected) {
+        if (indexPath.row == [LocationFaker selectedFavoriteIndex]) {
             [LocationFaker setCoordinate:CLLocationCoordinate2DMake(0, 0)];
             [LocationFaker setBaseStation:(FakeBaseStation){0,0,0,0, NO}];
-            [LocationFaker setEnabled:NO];
         }
-        [LocationFaker setCoordinate:[LocationFaker currentCoordinate]];
     }
 }
 @end
