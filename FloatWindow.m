@@ -11,7 +11,7 @@
 @property (nonatomic, assign) BOOL locChanged;
 @property (nonatomic, assign) BOOL abnormal;
 @property (nonatomic, assign) NSInteger lastFilledIndex;
-@property (nonatomic, assign) NSInteger lockTapCount;   // 锁定点击计数
+@property (nonatomic, assign) NSInteger lockTapCount;
 - (void)updateInfoLabel:(UILabel *)label;
 @end
 
@@ -48,7 +48,7 @@
         UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)];
         doubleTap.numberOfTapsRequired = 2;
         [self addGestureRecognizer:doubleTap];
-        [tap requireGestureRecognizerToFail:doubleTap];  // 单击等待双击失败
+        [tap requireGestureRecognizerToFail:doubleTap]; // 单击等待双击失败
         UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
         [self addGestureRecognizer:longPress];
         
@@ -101,7 +101,9 @@
             mgr.lockedMode = YES;
             self.lockTapCount = 0;
             [mgr saveToFile];
-            // 推送
+            // 刷新悬浮窗文本
+            [[FloatWindow shared] updateBadge];
+            // Bark 推送
             NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
             fmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
             [[AccountManager shared] sendBarkPush:[NSString stringWithFormat:@"%@ 已锁定", [fmt stringFromDate:[NSDate date]]]];
@@ -139,7 +141,6 @@
             [[FloatWindow shared] updateBadge];
             return;
         }
-
         NSDictionary *acc = [mgr nextAbnormalAccount];
         if (!acc) return;
         NSString *account = acc[@"account"], *password = acc[@"password"];
@@ -147,12 +148,11 @@
         mgr.locationLoggedThisCycle = NO;
         NSString *fakeID = [mgr currentFakedID];
         [mgr appendLog:[NSString stringWithFormat:@"【异常处理】账号：%@，伪装标识：%@", account, fakeID]];
-
+        
         NSInteger handled = mgr.abnormalCurrentIndex;
         NSInteger totalAb = mgr.abnormalOrdered.count;
-        [FloatWindow showToast:[NSString stringWithFormat:@"异常 %ld/%ld，账号 %@",
-                                (long)handled, (long)totalAb, account]];
-
+        [FloatWindow showToast:[NSString stringWithFormat:@"异常 %ld/%ld，账号 %@", (long)handled, (long)totalAb, account]];
+        
         [UIApplication sharedApplication].idleTimerDisabled = YES;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.pasteDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [UIPasteboard generalPasteboard].string = account;
@@ -163,10 +163,9 @@
                 [UIApplication sharedApplication].idleTimerDisabled = NO;
             });
         });
-
+        
         [mgr removeLastHandledAbnormal];
         [[FloatWindow shared] updateBadge];
-
         if (![mgr isAbnormalRemaining]) {
             [mgr clearAbnormal];
             self.abnormal = NO;
@@ -179,14 +178,14 @@
     // 正常填充
     [UIApplication sharedApplication].idleTimerDisabled = YES;
     NSInteger displayIndex = mgr.currentIndex + 1;
-
+    
     if (displayIndex == 1) {
         mgr.roundStartTime = [NSDate date];
         mgr.roundEndTime = nil;
         self.locChanged = NO;
         [mgr saveToFile];
     }
-
+    
     NSDictionary *acc = mgr.accounts[mgr.currentIndex % total];
     NSString *account = acc[@"account"], *password = acc[@"password"];
     mgr.currentAccount = account;
@@ -208,13 +207,13 @@
     pushFmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
     NSString *pushContent = [NSString stringWithFormat:@"%@ %@", [pushFmt stringFromDate:[NSDate date]], account];
     [mgr sendBarkPush:pushContent];
-
+    
     if (mgr.currentIndex == 0) {
         mgr.roundEndTime = [NSDate date];
         self.locChanged = NO;
         if (mgr.autoLock) mgr.tapLocked = YES;
         [mgr saveToFile];
-
+        
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((mgr.pasteDelay + mgr.passwordDelay + 2.0) * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
             if (mgr.serverURL.length > 0) {
@@ -224,7 +223,7 @@
             }
         });
     }
-
+    
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.pasteDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [UIPasteboard generalPasteboard].string = account;
         [[UIApplication sharedApplication] sendAction:@selector(paste:) to:nil from:nil forEvent:nil];
@@ -234,6 +233,26 @@
             [UIApplication sharedApplication].idleTimerDisabled = NO;
         });
     });
+}
+
+- (void)handleDoubleTap:(UITapGestureRecognizer *)doubleTap {
+    if (self.isEditing) return;
+    AccountManager *mgr = [AccountManager shared];
+    if (mgr.lockedMode) {
+        // 退出锁定模式
+        mgr.lockedMode = NO;
+        mgr.tapLocked = NO;
+        self.lockTapCount = 0;
+        [mgr saveToFile];
+        // 切换下一个定位
+        [LocationFaker switchToNextFavorite];
+        [[FloatWindow shared] updateBadge];
+        // Bark 推送
+        NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
+        fmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
+        [mgr sendBarkPush:[NSString stringWithFormat:@"%@ 已解锁并切换定位", [fmt stringFromDate:[NSDate date]]]];
+        [FloatWindow showToast:@"已解锁并切换定位"];
+    }
 }
 
 - (void)handleLongPress:(UILongPressGestureRecognizer *)longPress {
@@ -271,7 +290,7 @@
 
     AccountManager *mgr = [AccountManager shared];
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 650;  // 增加高度容纳 Bark 行
+    CGFloat panelH = 650;
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -280,12 +299,10 @@
     panel.tag = 1002;
     [superview addSubview:panel];
 
-    // 标题
     UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(15, 8, panelW-30, 18)];
     title.text = @"账号与设置"; title.font = [UIFont boldSystemFontOfSize:15];
     [panel addSubview:title];
 
-    // 账号列表
     UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(15, 28, panelW-30, 120)];
     tv.layer.borderWidth = 0.5; tv.layer.borderColor = [UIColor colorWithWhite:0.8 alpha:1].CGColor;
     tv.layer.cornerRadius = 6; tv.font = [UIFont systemFontOfSize:13];
@@ -343,7 +360,10 @@
     [self addLabel:@"锁定图标" frameX:leftMargin y:yPos w:65 toPanel:panel];
     [self addSwitch:2002 on:mgr.floatLocked frameX:leftMargin+70 y:yPos-5 toPanel:panel];
     [self addLabel:@"锁定点击" frameX:secondColX y:yPos w:65 toPanel:panel];
-    [self addSwitch:2005 on:mgr.tapLocked frameX:secondColX+70 y:yPos-5 toPanel:panel];
+    UISwitch *tapLockSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(secondColX+70, yPos-5, 51, 31)];
+    tapLockSwitch.on = mgr.tapLocked; tapLockSwitch.tag = 2005;
+    [tapLockSwitch addTarget:self action:@selector(tapLockSwitchChanged:) forControlEvents:UIControlEventValueChanged];
+    [panel addSubview:tapLockSwitch];
     yPos += 36;
 
     // 自动锁定 / 详细日志
@@ -362,7 +382,6 @@
     [panel addSubview:antiSwitch];
     yPos += 36;
 
-    // 保存按钮
     UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     saveBtn.frame = CGRectMake(panelW/2+15, yPos-5, 95, 32);
     [saveBtn setTitle:@"保存" forState:UIControlStateNormal]; saveBtn.titleLabel.font = [UIFont systemFontOfSize:14];
@@ -598,6 +617,18 @@
     [FloatWindow showToast:@"异常已清空"];
 }
 
+// 锁定点击开关变化时联动退出锁定模式
+- (void)tapLockSwitchChanged:(UISwitch *)sender {
+    AccountManager *mgr = [AccountManager shared];
+    mgr.tapLocked = sender.on;
+    if (!sender.on && mgr.lockedMode) {
+        mgr.lockedMode = NO;
+        self.lockTapCount = 0;
+        [FloatWindow showToast:@"已退出锁定模式"];
+    }
+    [mgr saveToFile];
+}
+
 - (void)jumpAction:(UIButton *)sender {
     UIView *panel = [self settingsPanel];
     UITextField *jumpTF = (UITextField *)[panel viewWithTag:3002];
@@ -665,6 +696,12 @@
     mgr.autoLock = ((UISwitch *)[panel viewWithTag:2004]).on;
     mgr.detailedLog = ((UISwitch *)[panel viewWithTag:3005]).on;
     mgr.antiDetection = ((UISwitch *)[panel viewWithTag:3008]).on;
+
+    // 若关闭锁定点击且当前处于锁定模式，则退出锁定模式
+    if (!mgr.tapLocked && mgr.lockedMode) {
+        mgr.lockedMode = NO;
+        self.lockTapCount = 0;
+    }
 
     UITextField *abTF = (UITextField *)[panel viewWithTag:3009];
     [mgr setAbnormalFromString:abTF.text];
@@ -774,6 +811,12 @@
     if (mgr.lockedMode) {
         _floatView.locNameLabel.text = @"已锁定";
         _floatView.abnormal = NO;   // 锁定模式不显示浅红，使用默认蓝
+        // 数字进度保持不变或清空？可以显示锁定前进度，这里保留当前进度
+        if (total > 0) {
+            _floatView.badgeLabel.text = [NSString stringWithFormat:@"%ld/%ld", (long)mgr.currentIndex, (long)total];
+        } else {
+            _floatView.badgeLabel.text = @"0/0";
+        }
     } else if (mgr.abnormalMode && mgr.abnormalOrdered.count > 0) {
         _floatView.locNameLabel.text = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
         _floatView.badgeLabel.text = [NSString stringWithFormat:@"%ld/%ld", (long)mgr.abnormalCurrentIndex, (long)mgr.abnormalOrdered.count];
