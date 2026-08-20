@@ -87,16 +87,14 @@
 
 - (void)handleTap:(UITapGestureRecognizer *)tap {
     if (self.isEditing) return;
-    AccountManager *mgr = [AccountManager shared];
+    AccountManager *mgr = [AccountManager shared];   // 关键：必须先声明
+
     if (mgr.tapLocked) {
-        // 如果当前已经进入锁定模式，则单击无反应，必须双击解锁
         if (mgr.lockedMode) {
             return;
         }
-        // 若只是点击锁定开启，但还未进入锁定模式，则计数
         self.lockTapCount++;
         if (self.lockTapCount >= 2) {
-            // 进入锁定模式
             mgr.lockedMode = YES;
             self.lockTapCount = 0;
             [mgr saveToFile];
@@ -115,7 +113,6 @@
     if (mgr.clickCooldown > 0 && (now - mgr.lastClickTime) < mgr.clickCooldown) {
         NSTimeInterval remaining = mgr.clickCooldown - (now - mgr.lastClickTime);
         [FloatWindow showToast:[NSString stringWithFormat:@"请 %.0f 秒后再点", remaining]];
-        // 记录异常账号（使用上一次实际填充的账号索引）
         [mgr recordAbnormalWithIndex:self.lastFilledIndex];
         if (!mgr.abnormalMode) {
             self.abnormal = YES;
@@ -194,11 +191,10 @@
         mgr.roundEndTime = nil;
         self.locChanged = NO;
         [mgr saveToFile];
-        
-    // 推送：开始
-    NSString *infoText = [self currentInfoLabelText];   // 需要实现此辅助方法
-    [mgr sendBarkPush:[NSString stringWithFormat:@"%@ %@", [self currentTimeString], infoText]];
-}
+
+        // Bark 推送：开始（时间+信息标签文本）
+        NSString *infoText = [self currentInfoLabelText];
+        [mgr sendBarkPush:[NSString stringWithFormat:@"%@ %@", [self currentTimeString], infoText]];
     }
 
     NSDictionary *acc = mgr.accounts[mgr.currentIndex % total];
@@ -229,7 +225,7 @@
         if (mgr.autoLock) mgr.tapLocked = YES;
         [mgr saveToFile];
 
-// 推送：结束
+        // Bark 推送：结束
         NSString *infoText = [self currentInfoLabelText];
         [mgr sendBarkPush:[NSString stringWithFormat:@"%@ %@", [self currentTimeString], infoText]];
 
