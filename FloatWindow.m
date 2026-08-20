@@ -17,6 +17,22 @@
 
 @implementation FloatView
 
+- (NSString *)currentTimeString {
+    NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
+    fmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
+    return [fmt stringFromDate:[NSDate date]];
+}
+
+- (NSString *)currentInfoLabelText {
+    UIView *panel = [self settingsPanel];
+    UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
+    if (infoLabel) {
+        [self updateInfoLabel:infoLabel];
+        return infoLabel.text;
+    }
+    return @"";
+}
+
 - (instancetype)initWithFrame:(CGRect)frame {
     if (self = [super initWithFrame:frame]) {
         self.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.9];
@@ -178,6 +194,11 @@
         mgr.roundEndTime = nil;
         self.locChanged = NO;
         [mgr saveToFile];
+        
+    // 推送：开始
+    NSString *infoText = [self currentInfoLabelText];   // 需要实现此辅助方法
+    [mgr sendBarkPush:[NSString stringWithFormat:@"%@ %@", [self currentTimeString], infoText]];
+}
     }
 
     NSDictionary *acc = mgr.accounts[mgr.currentIndex % total];
@@ -196,10 +217,10 @@
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
 
-    // Bark 推送：当前时间 + 账号
+    // Bark 推送：时间 + 序号 + 账号
     NSDateFormatter *pushFmt = [[NSDateFormatter alloc] init];
     pushFmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
-    NSString *pushContent = [NSString stringWithFormat:@"%@ %@", [pushFmt stringFromDate:[NSDate date]], account];
+    NSString *pushContent = [NSString stringWithFormat:@"%@ 序号:%ld 账号:%@", [pushFmt stringFromDate:[NSDate date]], (long)displayIndex, account];
     [mgr sendBarkPush:pushContent];
 
     if (mgr.currentIndex == 0) {
@@ -207,6 +228,10 @@
         self.locChanged = NO;
         if (mgr.autoLock) mgr.tapLocked = YES;
         [mgr saveToFile];
+
+// 推送：结束
+        NSString *infoText = [self currentInfoLabelText];
+        [mgr sendBarkPush:[NSString stringWithFormat:@"%@ %@", [self currentTimeString], infoText]];
 
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((mgr.pasteDelay + mgr.passwordDelay + 2.0) * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
@@ -572,8 +597,14 @@
 
         NSString *newLocName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
         if (![newLocName isEqualToString:self.previousLocName]) {
-            self.locChanged = YES;
-        }
+    self.locChanged = YES;
+    
+    // 推送：定位被修改
+    UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
+    [self updateInfoLabel:infoLabel];
+    NSString *infoText = infoLabel.text;
+    [mgr sendBarkPush:[NSString stringWithFormat:@"%@ %@", [self currentTimeString], infoText]];
+}
 
         UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
         [self updateInfoLabel:infoLabel];
