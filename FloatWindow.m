@@ -13,9 +13,12 @@
 @property (nonatomic, assign) NSInteger lastFilledIndex;
 @property (nonatomic, assign) NSInteger lockTapCount;
 - (void)updateInfoLabel:(UILabel *)label;
+- (NSString *)currentInfoLabelText; // 新增声明
 @end
 
 @implementation FloatView
+
+#pragma mark - 辅助方法（不依赖 UI）
 
 - (NSString *)currentTimeString {
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
@@ -24,11 +27,28 @@
 }
 
 - (NSString *)currentInfoLabelText {
-    UIView *panel = [self settingsPanel];
-    UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
-    if (infoLabel) {
-        [self updateInfoLabel:infoLabel];
-        return infoLabel.text;
+    AccountManager *mgr = [AccountManager shared];
+    NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
+    fmt.dateFormat = @"HH:mm";
+
+    BOOL hasStart = (mgr.roundStartTime != nil);
+    BOOL hasEnd = (mgr.roundEndTime != nil);
+    if (!hasStart && !hasEnd) return @"待开始";
+
+    NSString *prefix = self.locChanged ? @"已修改定位，" : @"";
+    NSString *locName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
+
+    if (hasEnd) {
+        return [NSString stringWithFormat:@"%@【%@】已结束，启动：%@，结束：%@",
+                prefix,
+                locName.length ? locName : @"未命名",
+                [fmt stringFromDate:mgr.roundStartTime],
+                [fmt stringFromDate:mgr.roundEndTime]];
+    } else if (hasStart) {
+        return [NSString stringWithFormat:@"%@【%@】进行中，启动：%@",
+                prefix,
+                locName.length ? locName : @"未命名",
+                [fmt stringFromDate:mgr.roundStartTime]];
     }
     return @"";
 }
@@ -64,7 +84,7 @@
         UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)];
         doubleTap.numberOfTapsRequired = 2;
         [self addGestureRecognizer:doubleTap];
-        [tap requireGestureRecognizerToFail:doubleTap]; // 单击等待双击失败
+        [tap requireGestureRecognizerToFail:doubleTap];
         UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
         [self addGestureRecognizer:longPress];
         
@@ -85,14 +105,31 @@
     }
 }
 
+- (void)handlePan:(UIPanGestureRecognizer *)pan {
+    if (self.isEditing || [AccountManager shared].floatLocked) return;
+    CGPoint translation = [pan translationInView:self.superview];
+    CGPoint newCenter = CGPointMake(self.center.x + translation.x, self.center.y + translation.y);
+    CGFloat half = self.bounds.size.width / 2, margin = 10;
+    newCenter.x = MAX(half + margin, MIN(newCenter.x, self.superview.bounds.size.width - half - margin));
+    newCenter.y = MAX(half + margin + 20, MIN(newCenter.y, self.superview.bounds.size.height - half - margin - 20));
+    self.center = newCenter;
+    [pan setTranslation:CGPointZero inView:self.superview];
+    if (pan.state == UIGestureRecognizerStateEnded) {
+        [AccountManager shared].floatWindowPoint = self.frame.origin;
+        [[AccountManager shared] saveToFile];
+    }
+}
+
 - (void)handleTap:(UITapGestureRecognizer *)tap {
     if (self.isEditing) return;
-    AccountManager *mgr = [AccountManager shared];   // 关键：必须先声明
+    AccountManager *mgr = [AccountManager shared];
+
+    // 锁定模式，单击无反应，只响应双击
+    if (mgr.lockedMode) {
+        return;
+    }
 
     if (mgr.tapLocked) {
-        if (mgr.lockedMode) {
-            return;
-        }
         self.lockTapCount++;
         if (self.lockTapCount >= 2) {
             mgr.lockedMode = YES;
@@ -113,11 +150,13 @@
     if (mgr.clickCooldown > 0 && (now - mgr.lastClickTime) < mgr.clickCooldown) {
         NSTimeInterval remaining = mgr.clickCooldown - (now - mgr.lastClickTime);
         [FloatWindow showToast:[NSString stringWithFormat:@"请 %.0f 秒后再点", remaining]];
+
         [mgr recordAbnormalWithIndex:self.lastFilledIndex];
         if (!mgr.abnormalMode) {
             self.abnormal = YES;
         }
-        // Bark 推送异常订单
+
+        // 异常订单推送
         if (self.lastFilledIndex > 0 && self.lastFilledIndex <= mgr.accounts.count) {
             NSDictionary *abnormalAcc = mgr.accounts[self.lastFilledIndex - 1];
             NSString *account = abnormalAcc[@"account"];
@@ -192,7 +231,7 @@
         self.locChanged = NO;
         [mgr saveToFile];
 
-        // Bark 推送：开始（时间+信息标签文本）
+        // 开始推送
         NSString *infoText = [self currentInfoLabelText];
         [mgr sendBarkPush:[NSString stringWithFormat:@"%@ %@", [self currentTimeString], infoText]];
     }
@@ -213,7 +252,7 @@
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
 
-    // Bark 推送：时间 + 序号 + 账号
+    // 正常点击推送：时间+序号+账号
     NSDateFormatter *pushFmt = [[NSDateFormatter alloc] init];
     pushFmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
     NSString *pushContent = [NSString stringWithFormat:@"%@ 序号:%ld 账号:%@", [pushFmt stringFromDate:[NSDate date]], (long)displayIndex, account];
@@ -225,7 +264,7 @@
         if (mgr.autoLock) mgr.tapLocked = YES;
         [mgr saveToFile];
 
-        // Bark 推送：结束
+        // 结束推送
         NSString *infoText = [self currentInfoLabelText];
         [mgr sendBarkPush:[NSString stringWithFormat:@"%@ %@", [self currentTimeString], infoText]];
 
@@ -254,15 +293,12 @@
     if (self.isEditing) return;
     AccountManager *mgr = [AccountManager shared];
     if (mgr.lockedMode) {
-        // 退出锁定模式
         mgr.lockedMode = NO;
         mgr.tapLocked = NO;
         self.lockTapCount = 0;
         [mgr saveToFile];
-        // 切换下一个定位
         [LocationFaker switchToNextFavorite];
         [[FloatWindow shared] updateBadge];
-        // Bark 推送
         NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
         fmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
         [mgr sendBarkPush:[NSString stringWithFormat:@"%@ 已解锁并切换定位", [fmt stringFromDate:[NSDate date]]]];
@@ -395,7 +431,7 @@
     UISwitch *antiSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+70, yPos-5, 51, 31)];
     antiSwitch.on = mgr.antiDetection; antiSwitch.tag = 3008;
     [panel addSubview:antiSwitch];
-    //yPos += 36;
+    yPos += 36;
 
     UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     saveBtn.frame = CGRectMake(panelW/2+15, yPos-5, 95, 32);
@@ -480,7 +516,7 @@
     barkKeyTF.borderStyle = UITextBorderStyleRoundedRect; barkKeyTF.font = [UIFont systemFontOfSize:13];
     barkKeyTF.text = mgr.barkKey; barkKeyTF.tag = 3010;
     [panel addSubview:barkKeyTF];
-    UISwitch *barkSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(panelW-150, yPos-5, 51, 31)];
+    UISwitch *barkSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(panelW-80 yPos-5, 51, 31)];
     barkSwitch.on = mgr.barkEnabled; barkSwitch.tag = 3011;
     [panel addSubview:barkSwitch];
     yPos += 36;
@@ -593,14 +629,14 @@
 
         NSString *newLocName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
         if (![newLocName isEqualToString:self.previousLocName]) {
-    self.locChanged = YES;
-    
-    // 推送：定位被修改
-    UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
-    [self updateInfoLabel:infoLabel];
-    NSString *infoText = infoLabel.text;
-    [[AccountManager shared] sendBarkPush:[NSString stringWithFormat:@"%@ %@", [self currentTimeString], infoText]];
-}
+            self.locChanged = YES;
+
+            // 推送定位被修改
+            UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
+            [self updateInfoLabel:infoLabel];
+            NSString *infoText = infoLabel.text;
+            [[AccountManager shared] sendBarkPush:[NSString stringWithFormat:@"%@ %@", [self currentTimeString], infoText]];
+        }
 
         UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
         [self updateInfoLabel:infoLabel];
@@ -638,7 +674,6 @@
     [FloatWindow showToast:@"异常已清空"];
 }
 
-// 锁定点击开关变化时联动退出锁定模式
 - (void)tapLockSwitchChanged:(UISwitch *)sender {
     AccountManager *mgr = [AccountManager shared];
     mgr.tapLocked = sender.on;
@@ -718,7 +753,6 @@
     mgr.detailedLog = ((UISwitch *)[panel viewWithTag:3005]).on;
     mgr.antiDetection = ((UISwitch *)[panel viewWithTag:3008]).on;
 
-    // 若关闭锁定点击且当前处于锁定模式，则退出锁定模式
     if (!mgr.tapLocked && mgr.lockedMode) {
         mgr.lockedMode = NO;
         self.lockTapCount = 0;
@@ -831,8 +865,7 @@
     NSInteger total = mgr.accounts.count;
     if (mgr.lockedMode) {
         _floatView.locNameLabel.text = @"已锁定";
-        _floatView.abnormal = NO;   // 锁定模式不显示浅红，使用默认蓝
-        // 数字进度保持不变或清空？可以显示锁定前进度，这里保留当前进度
+        _floatView.abnormal = NO;
         if (total > 0) {
             _floatView.badgeLabel.text = [NSString stringWithFormat:@"%ld/%ld", (long)mgr.currentIndex, (long)total];
         } else {
