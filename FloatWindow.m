@@ -599,7 +599,7 @@
     UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
     [self updateInfoLabel:infoLabel];
     NSString *infoText = infoLabel.text;
-    [mgr sendBarkPush:[NSString stringWithFormat:@"%@ %@", [self currentTimeString], infoText]];
+    [[AccountManager shared] sendBarkPush:[NSString stringWithFormat:@"%@ %@", [self currentTimeString], infoText]];
 }
 
         UILabel *infoLabel = (UILabel *)[panel viewWithTag:4000];
