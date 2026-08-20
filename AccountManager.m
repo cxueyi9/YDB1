@@ -35,19 +35,20 @@
         self.detailedLog = NO;
         self.antiDetection = NO;
         self.locationLoggedThisCycle = NO;
-        self.serverURL = @"http://你的服务器地址:5000/upload";
+        self.serverURL = @"";
         self.currentRoundRecords = [NSMutableArray array];
         self.currentAccount = @"";
         self.abnormalSet = [NSMutableSet set];
         self.abnormalOrdered = [NSMutableArray array];
         self.abnormalCurrentIndex = 0;
         self.abnormalMode = NO;
-        self.roundEndLocName = @"";
+        self.barkKey = @"";
+        self.barkEnabled = NO;
+        self.lockedMode = NO;
     }
     return self;
 }
 
-// ---- 账号管理 ----
 - (NSArray<NSDictionary *> *)accounts { return [_accounts copy]; }
 
 - (NSDictionary *)nextAccount {
@@ -102,7 +103,6 @@
     self.roundEndTime = nil;
     self.tapLocked = NO;
     self.currentAccount = @"";
-    self.roundEndLocName = @"";
     [self saveToFile];
 }
 
@@ -125,7 +125,8 @@
     [self saveToFile];
 }
 
-// ---- 伪装标识 ----
+#pragma mark - 伪装标识
+
 - (NSString *)generateFakedIDForAccount:(NSString *)account {
     if (!account || account.length == 0) return @"00000000-0000-0000-0000-000000000000";
     NSData *data = [account dataUsingEncoding:NSUTF8StringEncoding];
@@ -216,6 +217,10 @@
 }
 
 - (void)uploadRoundRecordsWithCompletion:(void(^)(BOOL success, NSString *msg))completion {
+    if (self.serverURL.length == 0) {
+        if (completion) completion(NO, @"未设置服务器地址");
+        return;
+    }
     if (self.currentRoundRecords.count == 0) {
         if (completion) completion(NO, @"无本轮记录");
         return;
@@ -234,6 +239,10 @@
 }
 
 - (void)uploadStagedRecordsWithCompletion:(void(^)(BOOL success, NSString *msg))completion {
+    if (self.serverURL.length == 0) {
+        if (completion) completion(NO, @"未设置服务器地址");
+        return;
+    }
     NSArray *staged = [self loadStagedRecords];
     if (staged.count == 0) {
         if (completion) completion(NO, @"无暂存记录");
@@ -343,7 +352,6 @@
 
 #pragma mark - 异常处理
 
-// ---- 异常处理 ----
 - (void)recordAbnormalWithIndex:(NSInteger)index {
     if (index < 1 || index > self.accounts.count) return;
     NSNumber *idx = @(index);
@@ -425,7 +433,21 @@
     return self.abnormalOrdered.count > 0;
 }
 
-// ========== 持久化（带保护） ==========
+#pragma mark - Bark 推送
+
+- (void)sendBarkPush:(NSString *)content {
+    if (!self.barkEnabled || self.barkKey.length == 0 || content.length == 0) return;
+    NSString *encoded = [content stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+    NSString *urlStr = [NSString stringWithFormat:@"https://api.day.app/%@/%@?group=易达宝司机", self.barkKey, encoded];
+    NSURL *url = [NSURL URLWithString:urlStr];
+    if (!url) return;
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
+    req.HTTPMethod = @"GET";
+    [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:nil] resume];
+}
+
+#pragma mark - 持久化（强化版）
+
 - (NSString *)dataFilePath {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     return [paths.firstObject stringByAppendingPathComponent:@"com.youdaibao.config.plist"];
@@ -433,7 +455,6 @@
 
 - (void)saveToFile {
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    // 基本属性
     [ud setInteger:self.currentIndex forKey:@"currentIndex"];
     [ud setBool:self.tapLocked forKey:@"tapLocked"];
     [ud setBool:self.autoLock forKey:@"autoLock"];
@@ -444,20 +465,22 @@
     [ud setDouble:self.lastClickTime forKey:@"lastClickTime"];
     [ud setBool:self.detailedLog forKey:@"detailedLog"];
     [ud setBool:self.antiDetection forKey:@"antiDetection"];
+    [ud setBool:self.lockedMode forKey:@"lockedMode"];
     [ud setObject:self.serverURL ?: @"" forKey:@"serverURL"];
     [ud setObject:self.currentAccount ?: @"" forKey:@"currentAccount"];
-    [ud setObject:self.roundEndLocName ?: @"" forKey:@"roundEndLocName"];
+    [ud setObject:self.barkKey ?: @"" forKey:@"barkKey"];
+    [ud setBool:self.barkEnabled forKey:@"barkEnabled"];
     if (self.roundStartTime) [ud setObject:self.roundStartTime forKey:@"roundStartTime"];
     else [ud removeObjectForKey:@"roundStartTime"];
     if (self.roundEndTime) [ud setObject:self.roundEndTime forKey:@"roundEndTime"];
     else [ud removeObjectForKey:@"roundEndTime"];
     [ud setObject:NSStringFromCGPoint(self.floatWindowPoint) forKey:@"floatWindowPoint"];
 
-    // 异常列表
+    // 异常列表存储为字符串
     [ud setObject:[self abnormalString] forKey:@"abnormalString"];
     [ud setBool:self.abnormalMode forKey:@"abnormalMode"];
 
-    // 账号列表：仅当有数据时才更新 JSON，防止覆盖有效数据
+    // 账号列表：仅当有数据时才更新 JSON
     if (_accounts.count > 0) {
         NSError *error;
         NSData *jsonData = [NSJSONSerialization dataWithJSONObject:_accounts options:0 error:&error];
@@ -484,8 +507,11 @@
         @"lastClickTime": @(self.lastClickTime),
         @"detailedLog": @(self.detailedLog),
         @"antiDetection": @(self.antiDetection),
+        @"lockedMode": @(self.lockedMode),
         @"serverURL": self.serverURL ?: @"",
-        @"currentAccount": self.currentAccount ?: @""
+        @"currentAccount": self.currentAccount ?: @"",
+        @"barkKey": self.barkKey ?: @"",
+        @"barkEnabled": @(self.barkEnabled)
     };
     [data writeToFile:[self dataFilePath] atomically:YES];
 }
@@ -502,11 +528,15 @@
     self.lastClickTime = [ud doubleForKey:@"lastClickTime"];
     self.detailedLog = [ud boolForKey:@"detailedLog"];
     self.antiDetection = [ud boolForKey:@"antiDetection"];
-    self.serverURL = [ud stringForKey:@"serverURL"] ?: @"http://你的服务器地址:5000/upload";
+    self.lockedMode = [ud boolForKey:@"lockedMode"];
+    self.serverURL = [ud stringForKey:@"serverURL"] ?: @"";
     self.currentAccount = [ud stringForKey:@"currentAccount"] ?: @"";
-    self.roundEndLocName = [ud stringForKey:@"roundEndLocName"] ?: @"";
+    self.barkKey = [ud stringForKey:@"barkKey"] ?: @"";
+    self.barkEnabled = [ud boolForKey:@"barkEnabled"];
     if ([ud objectForKey:@"roundStartTime"]) self.roundStartTime = [ud objectForKey:@"roundStartTime"];
+    else self.roundStartTime = nil;
     if ([ud objectForKey:@"roundEndTime"]) self.roundEndTime = [ud objectForKey:@"roundEndTime"];
+    else self.roundEndTime = nil;
     NSString *fpStr = [ud stringForKey:@"floatWindowPoint"];
     if (fpStr) self.floatWindowPoint = CGPointFromString(fpStr);
 
@@ -515,7 +545,7 @@
     if (abStr.length > 0) [self setAbnormalFromString:abStr];
     self.abnormalMode = [ud boolForKey:@"abnormalMode"];
 
-    // 恢复账号列表：优先 JSON，但如果解析出的数组为空，则忽略
+    // 恢复账号列表：优先从 JSON，空则忽略
     BOOL loaded = NO;
     NSString *jsonString = [ud stringForKey:@"accountsJSON"];
     if (jsonString.length > 0) {
@@ -528,7 +558,6 @@
         }
     }
 
-    // JSON 无效或为空，尝试 plist
     if (!loaded) {
         NSDictionary *data = [NSDictionary dictionaryWithContentsOfFile:[self dataFilePath]];
         NSArray *arr = data[@"accounts"];
@@ -538,7 +567,6 @@
         }
     }
 
-    // 都失败则空数组（首次启动）
     if (!loaded) {
         _accounts = [NSMutableArray array];
     }
@@ -558,6 +586,5 @@
     if (modified) [self saveToFile];
     self.currentRoundRecords = [NSMutableArray array];
 }
-
 
 @end

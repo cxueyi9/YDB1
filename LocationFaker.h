@@ -30,4 +30,7 @@ typedef struct {
 // 获取真实位置和基站（用于一键获取）
 + (void)requestRealLocationAndBaseStationWithCompletion:(void(^)(CLLocationCoordinate2D coord, FakeBaseStation bs))completion;
 
++ (NSArray *)favoriteList;          // 返回完整收藏数组
++ (void)switchToNextFavorite;       // 切换到下一个收藏定位
+
 @end

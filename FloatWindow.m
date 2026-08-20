@@ -11,6 +11,7 @@
 @property (nonatomic, assign) BOOL locChanged;
 @property (nonatomic, assign) BOOL abnormal;
 @property (nonatomic, assign) NSInteger lastFilledIndex;
+@property (nonatomic, assign) NSInteger lockTapCount;   // 锁定点击计数
 - (void)updateInfoLabel:(UILabel *)label;
 @end
 
@@ -44,12 +45,17 @@
         [self addGestureRecognizer:pan];
         UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
         [self addGestureRecognizer:tap];
+        UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)];
+        doubleTap.numberOfTapsRequired = 2;
+        [self addGestureRecognizer:doubleTap];
+        [tap requireGestureRecognizerToFail:doubleTap];  // 单击等待双击失败
         UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
         [self addGestureRecognizer:longPress];
         
         self.locChanged = NO;
         self.abnormal = NO;
         self.lastFilledIndex = 0;
+        self.lockTapCount = 0;
     }
     return self;
 }
@@ -81,15 +87,39 @@
 - (void)handleTap:(UITapGestureRecognizer *)tap {
     if (self.isEditing) return;
     AccountManager *mgr = [AccountManager shared];
-    if (mgr.tapLocked) { [FloatWindow showToast:@"点击已锁定"]; return; }
-
+    
+    // 锁定模式下，单击无反应，只有双击解锁
+    if (mgr.lockedMode) {
+        return;
+    }
+    
+    // 点击锁定开关打开的情况下
+    if (mgr.tapLocked) {
+        self.lockTapCount++;
+        if (self.lockTapCount >= 2) {
+            // 进入锁定模式
+            mgr.lockedMode = YES;
+            self.lockTapCount = 0;
+            [mgr saveToFile];
+            // 推送
+            NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
+            fmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
+            [[AccountManager shared] sendBarkPush:[NSString stringWithFormat:@"%@ 已锁定", [fmt stringFromDate:[NSDate date]]]];
+            [FloatWindow showToast:@"已进入锁定模式"];
+        } else {
+            [FloatWindow showToast:@"点击已锁定"];
+        }
+        return;
+    }
+    
+    // 正常点击流程
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
     if (mgr.clickCooldown > 0 && (now - mgr.lastClickTime) < mgr.clickCooldown) {
         NSTimeInterval remaining = mgr.clickCooldown - (now - mgr.lastClickTime);
         [FloatWindow showToast:[NSString stringWithFormat:@"请 %.0f 秒后再点", remaining]];
         [mgr recordAbnormalWithIndex:self.lastFilledIndex];
         if (!mgr.abnormalMode) {
-            self.abnormal = YES;   // 标记异常，背景变红
+            self.abnormal = YES;
         }
         return;
     }
@@ -153,7 +183,6 @@
     if (displayIndex == 1) {
         mgr.roundStartTime = [NSDate date];
         mgr.roundEndTime = nil;
-        mgr.roundEndLocName = @"";
         self.locChanged = NO;
         [mgr saveToFile];
     }
@@ -174,19 +203,25 @@
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
 
+    // Bark 推送：当前时间 + 账号
+    NSDateFormatter *pushFmt = [[NSDateFormatter alloc] init];
+    pushFmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
+    NSString *pushContent = [NSString stringWithFormat:@"%@ %@", [pushFmt stringFromDate:[NSDate date]], account];
+    [mgr sendBarkPush:pushContent];
+
     if (mgr.currentIndex == 0) {
         mgr.roundEndTime = [NSDate date];
-        // 记录结束时的定位名称
-        mgr.roundEndLocName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
         self.locChanged = NO;
         if (mgr.autoLock) mgr.tapLocked = YES;
         [mgr saveToFile];
 
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((mgr.pasteDelay + mgr.passwordDelay + 2.0) * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
-            [mgr uploadRoundRecordsWithCompletion:^(BOOL success, NSString *msg) {
-                [FloatWindow showToast: success ? @"本轮记录已上传" : [NSString stringWithFormat:@"上传失败: %@", msg]];
-            }];
+            if (mgr.serverURL.length > 0) {
+                [mgr uploadRoundRecordsWithCompletion:^(BOOL success, NSString *msg) {
+                    [FloatWindow showToast: success ? @"本轮记录已上传" : [NSString stringWithFormat:@"上传失败: %@", msg]];
+                }];
+            }
         });
     }
 
@@ -236,7 +271,7 @@
 
     AccountManager *mgr = [AccountManager shared];
     CGFloat panelW = screenBounds.size.width - 40;
-    CGFloat panelH = 620;
+    CGFloat panelH = 650;  // 增加高度容纳 Bark 行
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake((screenBounds.size.width - panelW)/2,
                                                               (screenBounds.size.height - panelH)/2 - 20,
                                                               panelW, panelH)];
@@ -250,6 +285,7 @@
     title.text = @"账号与设置"; title.font = [UIFont boldSystemFontOfSize:15];
     [panel addSubview:title];
 
+    // 账号列表
     UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(15, 28, panelW-30, 120)];
     tv.layer.borderWidth = 0.5; tv.layer.borderColor = [UIColor colorWithWhite:0.8 alpha:1].CGColor;
     tv.layer.cornerRadius = 6; tv.font = [UIFont systemFontOfSize:13];
@@ -324,7 +360,9 @@
     UISwitch *antiSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+70, yPos-5, 51, 31)];
     antiSwitch.on = mgr.antiDetection; antiSwitch.tag = 3008;
     [panel addSubview:antiSwitch];
+    yPos += 36;
 
+    // 保存按钮
     UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     saveBtn.frame = CGRectMake(panelW/2+15, yPos-5, 95, 32);
     [saveBtn setTitle:@"保存" forState:UIControlStateNormal]; saveBtn.titleLabel.font = [UIFont systemFontOfSize:14];
@@ -402,6 +440,17 @@
     [self addTextField:3003 value:mgr.serverURL frameX:leftMargin+75 y:yPos-2 w:panelW-120 toPanel:panel];
     yPos += 30;
 
+    // Bark 设置行
+    [self addLabel:@"Bark密钥" frameX:leftMargin y:yPos w:70 toPanel:panel];
+    UITextField *barkKeyTF = [[UITextField alloc] initWithFrame:CGRectMake(leftMargin+75, yPos-2, panelW-200, 26)];
+    barkKeyTF.borderStyle = UITextBorderStyleRoundedRect; barkKeyTF.font = [UIFont systemFontOfSize:13];
+    barkKeyTF.text = mgr.barkKey; barkKeyTF.tag = 3010;
+    [panel addSubview:barkKeyTF];
+    UISwitch *barkSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(panelW-50, yPos-5, 51, 31)];
+    barkSwitch.on = mgr.barkEnabled; barkSwitch.tag = 3011;
+    [panel addSubview:barkSwitch];
+    yPos += 36;
+
     // 底部按钮
     UIButton *copyLogBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     copyLogBtn.frame = CGRectMake(15, yPos, 80, 28);
@@ -444,11 +493,13 @@
 - (void)updateInfoLabel:(UILabel *)label {
     AccountManager *mgr = [AccountManager shared];
     if (!label) return;
+
     NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
     fmt.dateFormat = @"HH:mm";
 
     BOOL hasStart = (mgr.roundStartTime != nil);
     BOOL hasEnd = (mgr.roundEndTime != nil);
+    BOOL isLast = (mgr.currentIndex == 0 && mgr.accounts.count > 0);
 
     if (!hasStart && !hasEnd) {
         label.text = @"待开始";
@@ -456,23 +507,18 @@
     }
 
     NSString *prefix = self.locChanged ? @"已修改定位，" : @"";
-    NSString *locName = @"";
+    NSString *locName = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
+
     if (hasEnd) {
-        // 已结束：使用结束时保存的定位名，即使重启也能恢复
-        locName = mgr.roundEndLocName.length > 0 ? mgr.roundEndLocName : (mgr.roundEndLocName ?: @"");
         label.text = [NSString stringWithFormat:@"%@【%@】已结束，启动：%@，结束：%@",
                       prefix,
                       locName.length ? locName : @"未命名",
                       [fmt stringFromDate:mgr.roundStartTime],
                       [fmt stringFromDate:mgr.roundEndTime]];
     } else if (hasStart) {
-        // 进行中：使用当前定位名（如果启用），否则空
-        if ([LocationFaker isEnabled]) {
-            locName = [LocationFaker currentName];
-        }
         label.text = [NSString stringWithFormat:@"%@【%@】进行中，启动：%@",
                       prefix,
-                      locName.length ? locName : @"",
+                      locName.length ? locName : @"未命名",
                       [fmt stringFromDate:mgr.roundStartTime]];
     }
 }
@@ -624,6 +670,12 @@
     [mgr setAbnormalFromString:abTF.text];
 
     mgr.serverURL = [(UITextField *)[panel viewWithTag:3003] text] ?: mgr.serverURL;
+
+    UITextField *barkTF = (UITextField *)[panel viewWithTag:3010];
+    mgr.barkKey = barkTF.text ?: @"";
+    UISwitch *barkSw = (UISwitch *)[panel viewWithTag:3011];
+    mgr.barkEnabled = barkSw.on;
+
     [mgr saveToFile];
     [[FloatWindow shared] updateBadge];
     [self dismissPanel];
@@ -719,10 +771,15 @@
 - (void)updateBadge {
     AccountManager *mgr = [AccountManager shared];
     NSInteger total = mgr.accounts.count;
-    if (mgr.abnormalMode && mgr.abnormalOrdered.count > 0) {
+    if (mgr.lockedMode) {
+        _floatView.locNameLabel.text = @"已锁定";
+        _floatView.abnormal = NO;   // 锁定模式不显示浅红，使用默认蓝
+    } else if (mgr.abnormalMode && mgr.abnormalOrdered.count > 0) {
+        _floatView.locNameLabel.text = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
         _floatView.badgeLabel.text = [NSString stringWithFormat:@"%ld/%ld", (long)mgr.abnormalCurrentIndex, (long)mgr.abnormalOrdered.count];
         _floatView.abnormal = YES;
     } else if (total > 0) {
+        _floatView.locNameLabel.text = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
         _floatView.abnormal = NO;
         NSString *progressText;
         if (mgr.currentIndex == 0 && total > 0) {
@@ -733,8 +790,8 @@
         _floatView.badgeLabel.text = progressText;
     } else {
         _floatView.badgeLabel.text = @"0/0";
+        _floatView.locNameLabel.text = @"";
     }
-    _floatView.locNameLabel.text = [LocationFaker isEnabled] ? [LocationFaker currentName] : @"";
 }
 
 + (void)showToast:(NSString *)message {

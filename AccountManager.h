@@ -34,6 +34,14 @@
 @property (nonatomic, assign) NSInteger abnormalCurrentIndex;
 @property (nonatomic, assign) BOOL abnormalMode;
 
+// 新增 Bark 推送
+@property (nonatomic, copy) NSString *barkKey;
+@property (nonatomic, assign) BOOL barkEnabled;
+// 锁定模式（区别于点击锁定）
+@property (nonatomic, assign) BOOL lockedMode;
+
+- (void)sendBarkPush:(NSString *)content;
+
 - (NSDictionary *)nextAccount;
 - (void)updateAccountsWithText:(NSString *)text;
 - (NSString *)exportAccountsText;
@@ -69,4 +77,7 @@
 - (void)removeLastHandledAbnormal;
 - (BOOL)isAbnormalRemaining;
 - (void)loadFromFile;   // 公开加载方法，用于界面刷新
+
+
+
 @end
