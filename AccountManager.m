@@ -437,14 +437,32 @@
 
 - (void)sendBarkPush:(NSString *)content {
     if (!self.barkEnabled || self.barkKey.length == 0 || content.length == 0) return;
-    NSString *encoded = [content stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
-    NSString *urlStr = [NSString stringWithFormat:@"https://api.day.app/%@/%@?group=易达宝司机", self.barkKey, encoded];
+    
+    NSString *title = @"易达宝司机";   // 标题固定
+    NSString *group = @"易达宝司机";   // 分组固定
+    NSString *encodedTitle = [self URLEncodedString:title];
+    NSString *encodedContent = [self URLEncodedString:content];
+    NSString *encodedGroup = [self URLEncodedString:group];
+    
+    NSString *urlStr = [NSString stringWithFormat:@"https://api.day.app/%@/%@/%@?group=%@",
+                        self.barkKey,
+                        encodedTitle,
+                        encodedContent,
+                        encodedGroup];
     NSURL *url = [NSURL URLWithString:urlStr];
     if (!url) return;
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
     req.HTTPMethod = @"GET";
     NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:nil];
     [task resume];
+}
+
+// 辅助：更严格的URL编码
+- (NSString *)URLEncodedString:(NSString *)str {
+    NSCharacterSet *allowed = [NSCharacterSet URLQueryAllowedCharacterSet];
+    NSMutableCharacterSet *customAllowed = [allowed mutableCopy];
+    [customAllowed removeCharactersInString:@"&?=/+"];
+    return [str stringByAddingPercentEncodingWithAllowedCharacters:customAllowed];
 }
 
 #pragma mark - 持久化（强化版）

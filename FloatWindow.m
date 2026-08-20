@@ -117,12 +117,27 @@
     // 正常点击流程
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
     if (mgr.clickCooldown > 0 && (now - mgr.lastClickTime) < mgr.clickCooldown) {
-        NSTimeInterval remaining = mgr.clickCooldown - (now - mgr.lastClickTime);
-        [FloatWindow showToast:[NSString stringWithFormat:@"请 %.0f 秒后再点", remaining]];
-        [mgr recordAbnormalWithIndex:self.lastFilledIndex];
-        if (!mgr.abnormalMode) {
-            self.abnormal = YES;
-        }
+    NSTimeInterval remaining = mgr.clickCooldown - (now - mgr.lastClickTime);
+    [FloatWindow showToast:[NSString stringWithFormat:@"请 %.0f 秒后再点", remaining]];
+    
+    // 记录异常账号
+    [mgr recordAbnormalWithIndex:self.lastFilledIndex];
+    if (!mgr.abnormalMode) {
+        self.abnormal = YES;
+    }
+    
+    // 新增：Bark 推送异常订单
+    if (self.lastFilledIndex > 0 && self.lastFilledIndex <= mgr.accounts.count) {
+        NSDictionary *abnormalAcc = mgr.accounts[self.lastFilledIndex - 1];
+        NSString *account = abnormalAcc[@"account"];
+        NSDateFormatter *pushFmt = [[NSDateFormatter alloc] init];
+        pushFmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
+        NSString *timeStr = [pushFmt stringFromDate:[NSDate date]];
+        NSString *pushContent = [NSString stringWithFormat:@"异常订单 %@ 序号:%ld 账号:%@", timeStr, (long)self.lastFilledIndex, account];
+        [mgr sendBarkPush:pushContent];
+    }
+    return;
+}
         return;
     }
     mgr.lastClickTime = now;
@@ -380,7 +395,7 @@
     UISwitch *antiSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(leftMargin+70, yPos-5, 51, 31)];
     antiSwitch.on = mgr.antiDetection; antiSwitch.tag = 3008;
     [panel addSubview:antiSwitch];
-    yPos += 36;
+    //yPos += 36;
 
     UIButton *saveBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     saveBtn.frame = CGRectMake(panelW/2+15, yPos-5, 95, 32);
@@ -465,7 +480,7 @@
     barkKeyTF.borderStyle = UITextBorderStyleRoundedRect; barkKeyTF.font = [UIFont systemFontOfSize:13];
     barkKeyTF.text = mgr.barkKey; barkKeyTF.tag = 3010;
     [panel addSubview:barkKeyTF];
-    UISwitch *barkSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(panelW-50, yPos-5, 51, 31)];
+    UISwitch *barkSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(panelW-150, yPos-5, 51, 31)];
     barkSwitch.on = mgr.barkEnabled; barkSwitch.tag = 3011;
     [panel addSubview:barkSwitch];
     yPos += 36;
