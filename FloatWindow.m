@@ -69,75 +69,51 @@
     }
 }
 
-- (void)handlePan:(UIPanGestureRecognizer *)pan {
-    if (self.isEditing || [AccountManager shared].floatLocked) return;
-    CGPoint translation = [pan translationInView:self.superview];
-    CGPoint newCenter = CGPointMake(self.center.x + translation.x, self.center.y + translation.y);
-    CGFloat half = self.bounds.size.width / 2, margin = 10;
-    newCenter.x = MAX(half + margin, MIN(newCenter.x, self.superview.bounds.size.width - half - margin));
-    newCenter.y = MAX(half + margin + 20, MIN(newCenter.y, self.superview.bounds.size.height - half - margin - 20));
-    self.center = newCenter;
-    [pan setTranslation:CGPointZero inView:self.superview];
-    if (pan.state == UIGestureRecognizerStateEnded) {
-        [AccountManager shared].floatWindowPoint = self.frame.origin;
-        [[AccountManager shared] saveToFile];
-    }
-}
-
 - (void)handleTap:(UITapGestureRecognizer *)tap {
     if (self.isEditing) return;
     AccountManager *mgr = [AccountManager shared];
-    
-    // 锁定模式下，单击无反应，只有双击解锁
-    if (mgr.lockedMode) {
-        return;
-    }
-    
-    // 点击锁定开关打开的情况下
     if (mgr.tapLocked) {
+        // 如果当前已经进入锁定模式，则单击无反应，必须双击解锁
+        if (mgr.lockedMode) {
+            return;
+        }
+        // 若只是点击锁定开启，但还未进入锁定模式，则计数
         self.lockTapCount++;
         if (self.lockTapCount >= 2) {
             // 进入锁定模式
             mgr.lockedMode = YES;
             self.lockTapCount = 0;
             [mgr saveToFile];
-            // 刷新悬浮窗文本
             [[FloatWindow shared] updateBadge];
-            // Bark 推送
             NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
             fmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
-            [[AccountManager shared] sendBarkPush:[NSString stringWithFormat:@"%@ 已锁定", [fmt stringFromDate:[NSDate date]]]];
+            [mgr sendBarkPush:[NSString stringWithFormat:@"%@ 已锁定", [fmt stringFromDate:[NSDate date]]]];
             [FloatWindow showToast:@"已进入锁定模式"];
         } else {
             [FloatWindow showToast:@"点击已锁定"];
         }
         return;
     }
-    
-    // 正常点击流程
+
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
     if (mgr.clickCooldown > 0 && (now - mgr.lastClickTime) < mgr.clickCooldown) {
-    NSTimeInterval remaining = mgr.clickCooldown - (now - mgr.lastClickTime);
-    [FloatWindow showToast:[NSString stringWithFormat:@"请 %.0f 秒后再点", remaining]];
-    
-    // 记录异常账号
-    [mgr recordAbnormalWithIndex:self.lastFilledIndex];
-    if (!mgr.abnormalMode) {
-        self.abnormal = YES;
-    }
-    
-    // 新增：Bark 推送异常订单
-    if (self.lastFilledIndex > 0 && self.lastFilledIndex <= mgr.accounts.count) {
-        NSDictionary *abnormalAcc = mgr.accounts[self.lastFilledIndex - 1];
-        NSString *account = abnormalAcc[@"account"];
-        NSDateFormatter *pushFmt = [[NSDateFormatter alloc] init];
-        pushFmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
-        NSString *timeStr = [pushFmt stringFromDate:[NSDate date]];
-        NSString *pushContent = [NSString stringWithFormat:@"异常订单 %@ 序号:%ld 账号:%@", timeStr, (long)self.lastFilledIndex, account];
-        [mgr sendBarkPush:pushContent];
-    }
-    return;
-}
+        NSTimeInterval remaining = mgr.clickCooldown - (now - mgr.lastClickTime);
+        [FloatWindow showToast:[NSString stringWithFormat:@"请 %.0f 秒后再点", remaining]];
+        // 记录异常账号（使用上一次实际填充的账号索引）
+        [mgr recordAbnormalWithIndex:self.lastFilledIndex];
+        if (!mgr.abnormalMode) {
+            self.abnormal = YES;
+        }
+        // Bark 推送异常订单
+        if (self.lastFilledIndex > 0 && self.lastFilledIndex <= mgr.accounts.count) {
+            NSDictionary *abnormalAcc = mgr.accounts[self.lastFilledIndex - 1];
+            NSString *account = abnormalAcc[@"account"];
+            NSDateFormatter *pushFmt = [[NSDateFormatter alloc] init];
+            pushFmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
+            NSString *timeStr = [pushFmt stringFromDate:[NSDate date]];
+            NSString *pushContent = [NSString stringWithFormat:@"异常订单 %@ 序号:%ld 账号:%@", timeStr, (long)self.lastFilledIndex, account];
+            [mgr sendBarkPush:pushContent];
+        }
         return;
     }
     mgr.lastClickTime = now;
@@ -156,6 +132,7 @@
             [[FloatWindow shared] updateBadge];
             return;
         }
+
         NSDictionary *acc = [mgr nextAbnormalAccount];
         if (!acc) return;
         NSString *account = acc[@"account"], *password = acc[@"password"];
@@ -163,11 +140,12 @@
         mgr.locationLoggedThisCycle = NO;
         NSString *fakeID = [mgr currentFakedID];
         [mgr appendLog:[NSString stringWithFormat:@"【异常处理】账号：%@，伪装标识：%@", account, fakeID]];
-        
+
         NSInteger handled = mgr.abnormalCurrentIndex;
         NSInteger totalAb = mgr.abnormalOrdered.count;
-        [FloatWindow showToast:[NSString stringWithFormat:@"异常 %ld/%ld，账号 %@", (long)handled, (long)totalAb, account]];
-        
+        [FloatWindow showToast:[NSString stringWithFormat:@"异常 %ld/%ld，账号 %@",
+                                (long)handled, (long)totalAb, account]];
+
         [UIApplication sharedApplication].idleTimerDisabled = YES;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.pasteDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [UIPasteboard generalPasteboard].string = account;
@@ -178,9 +156,10 @@
                 [UIApplication sharedApplication].idleTimerDisabled = NO;
             });
         });
-        
+
         [mgr removeLastHandledAbnormal];
         [[FloatWindow shared] updateBadge];
+
         if (![mgr isAbnormalRemaining]) {
             [mgr clearAbnormal];
             self.abnormal = NO;
@@ -193,14 +172,14 @@
     // 正常填充
     [UIApplication sharedApplication].idleTimerDisabled = YES;
     NSInteger displayIndex = mgr.currentIndex + 1;
-    
+
     if (displayIndex == 1) {
         mgr.roundStartTime = [NSDate date];
         mgr.roundEndTime = nil;
         self.locChanged = NO;
         [mgr saveToFile];
     }
-    
+
     NSDictionary *acc = mgr.accounts[mgr.currentIndex % total];
     NSString *account = acc[@"account"], *password = acc[@"password"];
     mgr.currentAccount = account;
@@ -222,13 +201,13 @@
     pushFmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
     NSString *pushContent = [NSString stringWithFormat:@"%@ %@", [pushFmt stringFromDate:[NSDate date]], account];
     [mgr sendBarkPush:pushContent];
-    
+
     if (mgr.currentIndex == 0) {
         mgr.roundEndTime = [NSDate date];
         self.locChanged = NO;
         if (mgr.autoLock) mgr.tapLocked = YES;
         [mgr saveToFile];
-        
+
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((mgr.pasteDelay + mgr.passwordDelay + 2.0) * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
             if (mgr.serverURL.length > 0) {
@@ -238,7 +217,7 @@
             }
         });
     }
-    
+
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(mgr.pasteDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [UIPasteboard generalPasteboard].string = account;
         [[UIApplication sharedApplication] sendAction:@selector(paste:) to:nil from:nil forEvent:nil];
