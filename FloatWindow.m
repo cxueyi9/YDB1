@@ -516,7 +516,7 @@
     barkKeyTF.borderStyle = UITextBorderStyleRoundedRect; barkKeyTF.font = [UIFont systemFontOfSize:13];
     barkKeyTF.text = mgr.barkKey; barkKeyTF.tag = 3010;
     [panel addSubview:barkKeyTF];
-    UISwitch *barkSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(panelW-80 yPos-5, 51, 31)];
+    UISwitch *barkSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(panelW-80, yPos-5, 51, 31)];
     barkSwitch.on = mgr.barkEnabled; barkSwitch.tag = 3011;
     [panel addSubview:barkSwitch];
     yPos += 36;
