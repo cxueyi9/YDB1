@@ -443,7 +443,8 @@
     if (!url) return;
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
     req.HTTPMethod = @"GET";
-    [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:nil] resume];
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:nil];
+    [task resume];
 }
 
 #pragma mark - 持久化（强化版）
